@@ -1,6 +1,12 @@
+const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const Attendance = require('../models/Attendance');
 const Room = require('../models/Room');
+
+// Server-side ObjectId validation — never trust client's isGuest flag
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id;
+}
 
 // In-memory stores for real-time state
 const handRaiseQueues = new Map(); // roomId -> [{userId, userName, timestamp}]
@@ -12,18 +18,22 @@ function setupSocketHandlers(io) {
 
     // ==================== ROOM JOIN/LEAVE ====================
     socket.on('room:join', async (data) => {
-      const { roomId, userId, userName, isGuest } = data;
+      const { roomId, userId, userName } = data;
+
+      // Determine guest status by validating userId format on the server.
+      // Never trust the client's isGuest flag — it can be undefined.
+      const isGuestUser = !isValidObjectId(userId);
 
       socket.join(roomId);
-      activeUsers.set(socket.id, { userId, userName, roomId });
+      activeUsers.set(socket.id, { userId, userName, roomId, isGuest: isGuestUser });
 
       // Create attendance record
       try {
         const attendance = new Attendance({
           roomId,
           userName,
-          user: isGuest ? undefined : userId,
-          isGuest: !!isGuest,
+          user: isGuestUser ? undefined : userId,
+          isGuest: isGuestUser,
           joinTime: new Date(),
           status: 'present'
         });
@@ -231,19 +241,21 @@ function setupSocketHandlers(io) {
       }
     }
 
-    // Update room participant status
-    try {
-      await Room.updateOne(
-        { roomId, 'participants.user': userId, 'participants.isActive': true },
-        {
-          $set: {
-            'participants.$.isActive': false,
-            'participants.$.leftAt': new Date()
+    // Update room participant status — only for real users (valid ObjectId)
+    if (isValidObjectId(userId)) {
+      try {
+        await Room.updateOne(
+          { roomId, 'participants.user': userId, 'participants.isActive': true },
+          {
+            $set: {
+              'participants.$.isActive': false,
+              'participants.$.leftAt': new Date()
+            }
           }
-        }
-      );
-    } catch (err) {
-      console.error('Room participant update error:', err);
+        );
+      } catch (err) {
+        console.error('Room participant update error:', err);
+      }
     }
 
     // Remove from hand raise queue

@@ -20,7 +20,18 @@ const io = new Server(server, {
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
     methods: ['GET', 'POST'],
     credentials: true
-  }
+  },
+  // Performance: faster stale-connection detection for meetings
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  // Performance: compress WebSocket frames to reduce bandwidth
+  perMessageDeflate: {
+    threshold: 1024 // only compress messages > 1KB
+  },
+  // Allow both transports for reliability
+  transports: ['polling', 'websocket'],
+  // Increase max buffer for high-throughput rooms
+  maxHttpBufferSize: 1e6 // 1MB
 });
 
 // Middleware
@@ -28,8 +39,8 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Make io available to routes
 app.set('io', io);
@@ -53,7 +64,14 @@ setupSocketHandlers(io);
 // Connect to MongoDB and start server
 const PORT = process.env.PORT || 5000;
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/echomeet')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/echomeet', {
+  // Performance: connection pool sized for concurrent participant DB ops
+  maxPoolSize: 50,
+  minPoolSize: 5,
+  // Faster timeout for read-heavy meeting workloads
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 30000,
+})
   .then(async () => {
     console.log('✅ MongoDB connected');
 

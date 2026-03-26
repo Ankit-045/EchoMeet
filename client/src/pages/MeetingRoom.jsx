@@ -17,7 +17,7 @@ import {
 
 export default function MeetingRoom() {
   const { roomId } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
 
@@ -39,8 +39,10 @@ export default function MeetingRoom() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const recognitionRef = useRef(null);
 
-  // Join room on mount
+  // Join room on mount — wait for auth to resolve first
   useEffect(() => {
+    if (authLoading) return; // Wait for AuthContext to finish loading
+
     const join = async () => {
       try {
         const res = await joinRoom(roomId, { guestName: user?.name || 'Guest' });
@@ -56,17 +58,22 @@ export default function MeetingRoom() {
       }
     };
     join();
-  }, [roomId, user]);
+  }, [roomId, authLoading]);
 
   // Socket events
   useEffect(() => {
     if (!socket || !participantId) return;
 
+    // Derive isGuest from the participantId format returned by the server.
+    // This is always reliable — unlike user?.isGuest which can be undefined
+    // when AuthContext hasn't loaded yet.
+    const isGuestParticipant = participantId.startsWith('guest_');
+
     socket.emit('room:join', {
       roomId,
       userId: participantId,
       userName: participantName,
-      isGuest: user?.isGuest
+      isGuest: isGuestParticipant
     });
 
     socket.on('room:participant-count', (count) => setParticipantCount(count));
@@ -80,7 +87,7 @@ export default function MeetingRoom() {
       socket.off('room:participant-count');
       socket.off('meeting:ended');
     };
-  }, [socket, roomId, participantId, participantName, user, navigate]);
+  }, [socket, roomId, participantId, participantName, navigate]);
 
   // Speech-to-text
   const toggleTranscription = useCallback(() => {
