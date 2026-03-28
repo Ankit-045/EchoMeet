@@ -11,7 +11,9 @@ export function SocketProvider({ children }) {
     // Read token for socket authentication
     const token = localStorage.getItem('echomeet_token');
 
-    const newSocket = io(window.location.origin, {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
+
+    const newSocket = io(backendUrl, {
       transports: ['polling', 'websocket'],
       path: '/socket.io',
       reconnection: true,
