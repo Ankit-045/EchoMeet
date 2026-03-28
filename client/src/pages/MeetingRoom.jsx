@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { joinRoom, endRoom as endRoomApi, generateSummary } from '../services/api';
-import { LiveKitRoom, VideoConference, RoomAudioRenderer, ControlBar } from '@livekit/components-react';
+import { LiveKitRoom, VideoConference, RoomAudioRenderer } from '@livekit/components-react';
+import { Room, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
 import ChatPanel from '../components/ChatPanel';
 import HandRaisePanel from '../components/HandRaisePanel';
@@ -14,6 +15,40 @@ import {
   MessageSquare, Hand, Users, Brain, Pencil, X, Copy, Settings,
   LogOut, Monitor, UserCheck, ChevronRight
 } from 'lucide-react';
+
+// --- Error Boundary for LiveKit ---
+class LiveKitErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('LiveKit Error Boundary:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-center p-6">
+            <X className="w-12 h-12 text-red-400 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold mb-2">Video Error</h3>
+            <p className="text-dark-400 text-sm mb-4">{this.state.error?.message || 'Something went wrong with the video connection.'}</p>
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium transition-colors"
+            >
+              Retry Connection
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function MeetingRoom() {
   const { roomId } = useParams();
@@ -30,22 +65,52 @@ export default function MeetingRoom() {
   const [error, setError] = useState(null);
 
   // Panel states
-  const [activePanel, setActivePanel] = useState(null); // 'chat' | 'hand' | 'attendance' | 'summary' | 'drawing'
+  const [activePanel, setActivePanel] = useState(null);
   const [drawingActive, setDrawingActive] = useState(false);
   const [participantCount, setParticipantCount] = useState(1);
 
   // Transcript state
   const transcriptRef = useRef('');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const isTranscribingRef = useRef(false); // ref version to avoid stale closures
   const recognitionRef = useRef(null);
+
+  // --- Create a STABLE Room instance that survives React re-renders ---
+  const roomInstance = useMemo(() => {
+    return new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+      videoCaptureDefaults: {
+        resolution: { width: 640, height: 480, frameRate: 24 },
+      },
+      disconnectOnPageLeave: true,
+    });
+  }, []);
+
+  // Cleanup room instance on unmount
+  useEffect(() => {
+    return () => {
+      roomInstance.disconnect().catch(() => { });
+    };
+  }, [roomInstance]);
 
   // Join room on mount — wait for auth to resolve first
   useEffect(() => {
-    if (authLoading) return; // Wait for AuthContext to finish loading
+    if (authLoading) return;
 
     const join = async () => {
       try {
         const res = await joinRoom(roomId, { guestName: user?.name || 'Guest' });
+        if (!res.data.livekitToken) {
+          setError('Video token not received. LiveKit may be misconfigured.');
+          setLoading(false);
+          return;
+        }
         setLivekitToken(res.data.livekitToken);
         setRoom(res.data.room);
         setIsHost(res.data.isHost);
@@ -60,21 +125,26 @@ export default function MeetingRoom() {
     join();
   }, [roomId, authLoading]);
 
-  // Socket events
+  // Socket events + reconnect re-join
   useEffect(() => {
     if (!socket || !participantId) return;
 
-    // Derive isGuest from the participantId format returned by the server.
-    // This is always reliable — unlike user?.isGuest which can be undefined
-    // when AuthContext hasn't loaded yet.
     const isGuestParticipant = participantId.startsWith('guest_');
 
-    socket.emit('room:join', {
-      roomId,
-      userId: participantId,
-      userName: participantName,
-      isGuest: isGuestParticipant
-    });
+    const emitJoin = () => {
+      socket.emit('room:join', {
+        roomId,
+        userId: participantId,
+        userName: participantName,
+        isGuest: isGuestParticipant
+      });
+    };
+
+    // Join the room immediately
+    emitJoin();
+
+    // Re-join on socket reconnect so server participant tracking stays accurate
+    socket.on('connect', emitJoin);
 
     socket.on('room:participant-count', (count) => setParticipantCount(count));
     socket.on('meeting:ended', () => {
@@ -84,16 +154,18 @@ export default function MeetingRoom() {
 
     return () => {
       socket.emit('room:leave', { roomId, userId: participantId, userName: participantName });
+      socket.off('connect', emitJoin);
       socket.off('room:participant-count');
       socket.off('meeting:ended');
     };
   }, [socket, roomId, participantId, participantName, navigate]);
 
-  // Speech-to-text
+  // Speech-to-text (fixed closure bug)
   const toggleTranscription = useCallback(() => {
     if (isTranscribing) {
       recognitionRef.current?.stop();
       setIsTranscribing(false);
+      isTranscribingRef.current = false;
       return;
     }
 
@@ -132,8 +204,8 @@ export default function MeetingRoom() {
     };
 
     recognition.onend = () => {
-      // Auto-restart if still transcribing
-      if (isTranscribing) {
+      // Use ref to check current state — avoids stale closure over isTranscribing
+      if (isTranscribingRef.current) {
         try { recognition.start(); } catch { /* ignore */ }
       }
     };
@@ -141,8 +213,17 @@ export default function MeetingRoom() {
     recognition.start();
     recognitionRef.current = recognition;
     setIsTranscribing(true);
+    isTranscribingRef.current = true;
     toast.success('Transcription started');
   }, [isTranscribing, participantName, socket, roomId]);
+
+  // Cleanup speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      isTranscribingRef.current = false;
+      recognitionRef.current?.stop();
+    };
+  }, []);
 
   const handleEndMeeting = async () => {
     if (!window.confirm('End meeting for all participants?')) return;
@@ -241,24 +322,31 @@ export default function MeetingRoom() {
         {/* Video Area */}
         <div className="flex-1 relative">
           {livekitToken ? (
-            <LiveKitRoom
-              serverUrl={LIVEKIT_URL}
-              token={livekitToken}
-              connect={true}
-              video={true}
-              audio={true}
-              data-lk-theme="default"
-              style={{ height: '100%' }}
-              options={{
-                audioCaptureDefaults: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
-                videoCaptureDefaults: { resolution: { width: 640, height: 480, frameRate: 24 } },
-                adaptiveStream: true,
-                dynacast: true,
-              }}
-            >
-              <VideoConference />
-              <RoomAudioRenderer />
-            </LiveKitRoom>
+            <LiveKitErrorBoundary>
+              <LiveKitRoom
+                room={roomInstance}
+                serverUrl={LIVEKIT_URL}
+                token={livekitToken}
+                connect={true}
+                video={true}
+                audio={true}
+                data-lk-theme="default"
+                style={{ height: '100%' }}
+                onConnected={() => {
+                  console.log('✅ LiveKit connected to room:', roomId);
+                }}
+                onDisconnected={() => {
+                  console.log('❌ LiveKit disconnected from room:', roomId);
+                }}
+                onError={(error) => {
+                  console.error('LiveKit connection error:', error);
+                  toast.error(`Video error: ${error.message}`);
+                }}
+              >
+                <VideoConference />
+                <RoomAudioRenderer />
+              </LiveKitRoom>
+            </LiveKitErrorBoundary>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <p className="text-dark-400">Connecting to video...</p>

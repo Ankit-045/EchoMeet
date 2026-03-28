@@ -8,22 +8,29 @@ export default function ChatPanel({ roomId, userId, userName, socket }) {
   const [chatType, setChatType] = useState('group');
   const [privateRecipient, setPrivateRecipient] = useState(null);
   const bottomRef = useRef(null);
+  const seenIds = useRef(new Set()); // Track seen message IDs for dedup
 
-  // Load chat history
+  // Load chat history — re-fetch when switching between group/private
   useEffect(() => {
     const loadHistory = async () => {
       try {
-        const res = await getChatHistory(roomId, 'group');
-        setMessages(res.data.messages || []);
+        const res = await getChatHistory(roomId, chatType);
+        const msgs = res.data.messages || [];
+        // Reset dedup set and populate with history IDs
+        seenIds.current = new Set(msgs.map(m => m._id).filter(Boolean));
+        setMessages(msgs);
       } catch { /* ignore */ }
     };
     loadHistory();
-  }, [roomId]);
+  }, [roomId, chatType]);
 
-  // Listen for new messages
+  // Listen for new messages — deduplicate by _id
   useEffect(() => {
     if (!socket) return;
     const handler = (msg) => {
+      // Skip if we've already seen this message (prevents duplicates on reconnect)
+      if (msg._id && seenIds.current.has(msg._id)) return;
+      if (msg._id) seenIds.current.add(msg._id);
       setMessages(prev => [...prev, msg]);
     };
     socket.on('chat:message', handler);
