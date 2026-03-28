@@ -57,9 +57,27 @@ app.use('/api/attendance', apiLimiter, attendanceRoutes);
 app.use('/api/summary', summaryLimiter, summaryRoutes);
 
 // Health check
+const path = require('path');
+
+// 1. Existing Health check (Keep this!)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// 2. Add this Production Environment Block
+// This securely serves the compiled Vite frontend 
+if (process.env.NODE_ENV === 'production') {
+  // CommonJS uses __dirname. Since index.js is in src/, we go up twice to reach the client/dist folder
+  const clientBuildPath = path.join(__dirname, '../../client/dist');
+
+  // Serve the static files
+  app.use(express.static(clientBuildPath));
+
+  // Catch-all route to hand over frontend routing back to React Router
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 // Setup Socket.io handlers
 setupSocketHandlers(io);
