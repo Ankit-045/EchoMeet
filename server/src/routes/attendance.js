@@ -4,6 +4,19 @@ const { auth } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Get all attendance for current user — MUST be before /:roomId
+router.get('/my/history', auth, async (req, res) => {
+  try {
+    const attendance = await Attendance.find({ user: req.user._id })
+      .sort({ meetingDate: -1 })
+      .limit(50);
+
+    res.json({ attendance });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch attendance history' });
+  }
+});
+
 // Get attendance for a room
 router.get('/:roomId', auth, async (req, res) => {
   try {
@@ -11,7 +24,6 @@ router.get('/:roomId', auth, async (req, res) => {
       .populate('user', 'name email')
       .sort({ joinTime: 1 });
 
-    // Calculate attendance stats
     const stats = {
       totalParticipants: attendance.length,
       present: attendance.filter(a => a.status === 'present').length,
@@ -25,19 +37,6 @@ router.get('/:roomId', auth, async (req, res) => {
     res.json({ attendance, stats });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch attendance' });
-  }
-});
-
-// Get all attendance for current user
-router.get('/my/history', auth, async (req, res) => {
-  try {
-    const attendance = await Attendance.find({ user: req.user._id })
-      .sort({ meetingDate: -1 })
-      .limit(50);
-
-    res.json({ attendance });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch attendance history' });
   }
 });
 

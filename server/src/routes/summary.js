@@ -1,11 +1,12 @@
 const express = require('express');
 const Summary = require('../models/Summary');
 const { auth } = require('../middleware/auth');
+const { validateGenerateSummary } = require('../middleware/validate');
 
 const router = express.Router();
 
 // Generate summary from transcript
-router.post('/generate', auth, async (req, res) => {
+router.post('/generate', auth, validateGenerateSummary, async (req, res) => {
   try {
     const { roomId, roomName, transcript, participantCount, duration } = req.body;
 
@@ -36,12 +37,12 @@ router.post('/generate', auth, async (req, res) => {
   }
 });
 
-// Get summaries for a room
-router.get('/:roomId', auth, async (req, res) => {
+// Get all summaries for user — MUST be before /:roomId to avoid matching 'my' as roomId
+router.get('/my/all', auth, async (req, res) => {
   try {
-    const summaries = await Summary.find({ roomId: req.params.roomId })
-      .populate('host', 'name email')
-      .sort({ generatedAt: -1 });
+    const summaries = await Summary.find({ host: req.user._id })
+      .sort({ generatedAt: -1 })
+      .limit(50);
 
     res.json({ summaries });
   } catch (error) {
@@ -49,12 +50,12 @@ router.get('/:roomId', auth, async (req, res) => {
   }
 });
 
-// Get all summaries for user
-router.get('/my/all', auth, async (req, res) => {
+// Get summaries for a room
+router.get('/:roomId', auth, async (req, res) => {
   try {
-    const summaries = await Summary.find({ host: req.user._id })
-      .sort({ generatedAt: -1 })
-      .limit(50);
+    const summaries = await Summary.find({ roomId: req.params.roomId })
+      .populate('host', 'name email')
+      .sort({ generatedAt: -1 });
 
     res.json({ summaries });
   } catch (error) {

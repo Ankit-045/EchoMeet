@@ -3,11 +3,12 @@ const { v4: uuidv4 } = require('uuid');
 const { AccessToken } = require('livekit-server-sdk');
 const Room = require('../models/Room');
 const { auth, optionalAuth } = require('../middleware/auth');
+const { validateCreateRoom, validateJoinRoom } = require('../middleware/validate');
 
 const router = express.Router();
 
 // Create room
-router.post('/create', auth, async (req, res) => {
+router.post('/create', auth, validateCreateRoom, async (req, res) => {
   try {
     const { name, settings } = req.body;
     const roomId = uuidv4().slice(0, 8).toUpperCase();
@@ -35,6 +36,9 @@ router.post('/create', auth, async (req, res) => {
 
     // Generate LiveKit token for host
     const livekitToken = await generateLivekitToken(roomId, req.user._id.toString(), req.user.name, true);
+    if (!livekitToken) {
+      return res.status(500).json({ error: 'Failed to generate video token. Check LiveKit configuration.' });
+    }
 
     res.status(201).json({ room, livekitToken, joinLink: `/meeting/${roomId}` });
   } catch (error) {
@@ -44,7 +48,7 @@ router.post('/create', auth, async (req, res) => {
 });
 
 // Join room
-router.post('/join/:roomId', optionalAuth, async (req, res) => {
+router.post('/join/:roomId', optionalAuth, validateJoinRoom, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { guestName } = req.body;
@@ -85,9 +89,19 @@ router.post('/join/:roomId', optionalAuth, async (req, res) => {
 
     const isHost = room.host.toString() === (req.user?._id?.toString() || '');
     const livekitToken = await generateLivekitToken(roomId, participantId, participantName, isHost);
+    if (!livekitToken) {
+      return res.status(500).json({ error: 'Failed to generate video token. Check LiveKit configuration.' });
+    }
 
     res.json({
-      room,
+      room: {
+        _id: room._id,
+        roomId: room.roomId,
+        name: room.name,
+        settings: room.settings,
+        startedAt: room.startedAt,
+        isActive: room.isActive,
+      },
       livekitToken,
       participantId,
       participantName,
@@ -195,6 +209,11 @@ router.post('/:roomId/screen-share-permission', auth, async (req, res) => {
 
 // Helper: Generate LiveKit token
 async function generateLivekitToken(roomName, participantId, participantName, isHost = false) {
+  if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
+    console.error('LiveKit API key/secret not configured in environment');
+    return null;
+  }
+
   try {
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
@@ -202,6 +221,7 @@ async function generateLivekitToken(roomName, participantId, participantName, is
       {
         identity: participantId,
         name: participantName,
+        ttl: '6h',
       }
     );
 
@@ -214,7 +234,12 @@ async function generateLivekitToken(roomName, participantId, participantName, is
       roomAdmin: isHost,
     });
 
-    return await at.toJwt();
+    const token = await at.toJwt();
+    if (!token) {
+      console.error('LiveKit toJwt() returned falsy value');
+      return null;
+    }
+    return token;
   } catch (error) {
     console.error('LiveKit token generation error:', error);
     return null;

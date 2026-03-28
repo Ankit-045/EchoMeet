@@ -3,11 +3,12 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const { validateRegister, validateLogin, validateGuestAccess } = require('../middleware/validate');
 
 const router = express.Router();
 
 // Register
-router.post('/register', async (req, res) => {
+router.post('/register', validateRegister, async (req, res) => {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password) {
@@ -35,7 +36,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', validateLogin, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -59,7 +60,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Guest access
-router.post('/guest', async (req, res) => {
+router.post('/guest', validateGuestAccess, async (req, res) => {
   try {
     const { name } = req.body;
     const guestName = name || `Guest_${uuidv4().slice(0, 6)}`;

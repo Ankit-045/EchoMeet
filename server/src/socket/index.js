@@ -1,9 +1,10 @@
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const Message = require('../models/Message');
 const Attendance = require('../models/Attendance');
 const Room = require('../models/Room');
 
-// Server-side ObjectId validation — never trust client's isGuest flag
+// Server-side ObjectId validation
 function isValidObjectId(id) {
   return mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id;
 }
@@ -12,16 +13,54 @@ function isValidObjectId(id) {
 const handRaiseQueues = new Map(); // roomId -> [{userId, userName, timestamp}]
 const activeUsers = new Map(); // socketId -> {userId, userName, roomId}
 
+// Simple socket-level rate limiter for high-frequency events
+const socketRateLimits = new Map(); // socketId -> { event: lastTimestamp }
+function isRateLimited(socketId, event, minIntervalMs = 50) {
+  const key = `${socketId}:${event}`;
+  const now = Date.now();
+  const last = socketRateLimits.get(key) || 0;
+  if (now - last < minIntervalMs) return true;
+  socketRateLimits.set(key, now);
+  return false;
+}
+
+// Payload validation helpers
+function validateString(val, maxLen = 500) {
+  return typeof val === 'string' && val.length > 0 && val.length <= maxLen;
+}
+
+function validateRoomId(val) {
+  return typeof val === 'string' && val.length >= 4 && val.length <= 20;
+}
+
 function setupSocketHandlers(io) {
+  // ==================== SOCKET AUTHENTICATION ====================
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      // Allow unauthenticated connections but mark them
+      socket.userData = { authenticated: false };
+      return next();
+    }
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.userData = { authenticated: true, userId: decoded.id };
+      next();
+    } catch (err) {
+      // Allow connection but mark as unauthenticated (guest flow)
+      socket.userData = { authenticated: false };
+      next();
+    }
+  });
+
   io.on('connection', (socket) => {
-    console.log(`🔌 Socket connected: ${socket.id}`);
+    console.log(`🔌 Socket connected: ${socket.id} (auth: ${socket.userData?.authenticated})`);
 
     // ==================== ROOM JOIN/LEAVE ====================
     socket.on('room:join', async (data) => {
-      const { roomId, userId, userName } = data;
+      if (!data || !validateRoomId(data.roomId) || !validateString(data.userId, 100)) return;
+      const { roomId, userId, userName = 'Anonymous' } = data;
 
-      // Determine guest status by validating userId format on the server.
-      // Never trust the client's isGuest flag — it can be undefined.
       const isGuestUser = !isValidObjectId(userId);
 
       socket.join(roomId);
@@ -29,9 +68,17 @@ function setupSocketHandlers(io) {
 
       // Create attendance record
       try {
+        // Look up room name for the attendance record
+        let roomName = '';
+        try {
+          const room = await Room.findOne({ roomId }, 'name').lean();
+          roomName = room?.name || '';
+        } catch (_) { }
+
         const attendance = new Attendance({
           roomId,
-          userName,
+          roomName,
+          userName: String(userName).slice(0, 50),
           user: isGuestUser ? undefined : userId,
           isGuest: isGuestUser,
           joinTime: new Date(),
@@ -46,7 +93,7 @@ function setupSocketHandlers(io) {
       // Notify room
       io.to(roomId).emit('room:user-joined', {
         userId,
-        userName,
+        userName: String(userName).slice(0, 50),
         socketId: socket.id,
         timestamp: new Date()
       });
@@ -61,23 +108,31 @@ function setupSocketHandlers(io) {
     });
 
     socket.on('room:leave', async (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
       const { roomId, userId, userName } = data;
       await handleLeave(socket, io, roomId, userId, userName);
     });
 
     // ==================== CHAT ====================
     socket.on('chat:send', async (data) => {
-      const { roomId, content, senderName, senderId, type = 'group', recipientId, recipientName } = data;
+      if (!data || !validateRoomId(data.roomId) || !validateString(data.content, 2000)) return;
+      const { roomId, content, senderName = 'Anonymous', senderId, type = 'group', recipientId, recipientName } = data;
+
+      // Validate type enum
+      if (!['group', 'private'].includes(type)) return;
 
       try {
+        // For guest senders, don't set the ObjectId `sender` field
+        const isGuestSender = !isValidObjectId(senderId);
+
         const message = new Message({
           roomId,
-          sender: senderId,
-          senderName,
-          content,
+          sender: isGuestSender ? undefined : senderId,
+          senderName: String(senderName).slice(0, 50),
+          content: String(content).slice(0, 2000),
           type,
-          recipient: type === 'private' ? recipientId : undefined,
-          recipientName: type === 'private' ? recipientName : undefined,
+          recipient: (type === 'private' && isValidObjectId(recipientId)) ? recipientId : undefined,
+          recipientName: type === 'private' ? String(recipientName || '').slice(0, 50) : undefined,
           timestamp: new Date()
         });
         await message.save();
@@ -85,9 +140,9 @@ function setupSocketHandlers(io) {
         const msgData = {
           _id: message._id,
           roomId,
-          senderName,
+          senderName: message.senderName,
           senderId,
-          content,
+          content: message.content,
           type,
           recipientId,
           recipientName,
@@ -95,7 +150,6 @@ function setupSocketHandlers(io) {
         };
 
         if (type === 'private') {
-          // Send to sender and recipient only
           const recipientSocket = findSocketByUserId(recipientId);
           socket.emit('chat:message', msgData);
           if (recipientSocket) {
@@ -112,15 +166,16 @@ function setupSocketHandlers(io) {
 
     // ==================== HAND RAISE ====================
     socket.on('hand-raise:raise', (data) => {
-      const { roomId, userId, userName } = data;
+      if (!data || !validateRoomId(data.roomId) || !validateString(data.userId, 100)) return;
+      const { roomId, userId, userName = 'Anonymous' } = data;
+
       if (!handRaiseQueues.has(roomId)) {
         handRaiseQueues.set(roomId, []);
       }
       const queue = handRaiseQueues.get(roomId);
 
-      // Prevent duplicate raises
       if (!queue.find(h => h.userId === userId)) {
-        queue.push({ userId, userName, timestamp: new Date(), socketId: socket.id });
+        queue.push({ userId, userName: String(userName).slice(0, 50), timestamp: new Date(), socketId: socket.id });
         handRaiseQueues.set(roomId, queue);
       }
 
@@ -128,6 +183,7 @@ function setupSocketHandlers(io) {
     });
 
     socket.on('hand-raise:lower', (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
       const { roomId, userId } = data;
       if (handRaiseQueues.has(roomId)) {
         const queue = handRaiseQueues.get(roomId).filter(h => h.userId !== userId);
@@ -137,6 +193,7 @@ function setupSocketHandlers(io) {
     });
 
     socket.on('hand-raise:acknowledge', (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
       const { roomId, userId } = data;
       if (handRaiseQueues.has(roomId)) {
         const queue = handRaiseQueues.get(roomId).filter(h => h.userId !== userId);
@@ -148,47 +205,57 @@ function setupSocketHandlers(io) {
 
     // ==================== SCREEN SHARE ====================
     socket.on('screen-share:request', (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
       const { roomId, userId, userName } = data;
-      // Forward request to host
       io.to(roomId).emit('screen-share:request', { userId, userName });
     });
 
     socket.on('screen-share:approve', (data) => {
-      const { roomId, userId } = data;
-      io.to(roomId).emit('screen-share:approved', { userId });
+      if (!data || !validateRoomId(data.roomId)) return;
+      io.to(data.roomId).emit('screen-share:approved', { userId: data.userId });
     });
 
     socket.on('screen-share:deny', (data) => {
-      const { roomId, userId } = data;
-      io.to(roomId).emit('screen-share:denied', { userId });
+      if (!data || !validateRoomId(data.roomId)) return;
+      io.to(data.roomId).emit('screen-share:denied', { userId: data.userId });
     });
 
     socket.on('screen-share:started', (data) => {
-      const { roomId, userId, userName } = data;
-      io.to(roomId).emit('screen-share:active', { userId, userName });
+      if (!data || !validateRoomId(data.roomId)) return;
+      io.to(data.roomId).emit('screen-share:active', { userId: data.userId, userName: data.userName });
     });
 
     socket.on('screen-share:stopped', (data) => {
-      const { roomId, userId } = data;
-      io.to(roomId).emit('screen-share:inactive', { userId });
+      if (!data || !validateRoomId(data.roomId)) return;
+      io.to(data.roomId).emit('screen-share:inactive', { userId: data.userId });
     });
 
     // ==================== AIR DRAWING ====================
     socket.on('drawing:data', (data) => {
-      const { roomId, points, color, thickness } = data;
-      // Broadcast drawing data to all other participants
-      socket.to(roomId).emit('drawing:data', { points, color, thickness, userId: data.userId });
+      if (!data || !validateRoomId(data.roomId)) return;
+      // Rate limit drawing events (max ~20/sec per socket)
+      if (isRateLimited(socket.id, 'drawing', 50)) return;
+      socket.to(data.roomId).emit('drawing:data', {
+        points: data.points,
+        color: data.color,
+        thickness: data.thickness,
+        userId: data.userId
+      });
     });
 
     socket.on('drawing:clear', (data) => {
-      const { roomId } = data;
-      socket.to(roomId).emit('drawing:clear', { userId: data.userId });
+      if (!data || !validateRoomId(data.roomId)) return;
+      socket.to(data.roomId).emit('drawing:clear', { userId: data.userId });
     });
 
     // ==================== TRANSCRIPT ====================
     socket.on('transcript:chunk', (data) => {
-      const { roomId, text, speaker } = data;
-      io.to(roomId).emit('transcript:chunk', { text, speaker, timestamp: new Date() });
+      if (!data || !validateRoomId(data.roomId) || !validateString(data.text, 5000)) return;
+      io.to(data.roomId).emit('transcript:chunk', {
+        text: String(data.text).slice(0, 5000),
+        speaker: String(data.speaker || 'Unknown').slice(0, 50),
+        timestamp: new Date()
+      });
     });
 
     // ==================== DISCONNECT ====================
@@ -198,9 +265,39 @@ function setupSocketHandlers(io) {
         await handleLeave(socket, io, userData.roomId, userData.userId, userData.userName);
         activeUsers.delete(socket.id);
       }
+      // Clean up rate limit entries for this socket
+      for (const key of socketRateLimits.keys()) {
+        if (key.startsWith(socket.id)) {
+          socketRateLimits.delete(key);
+        }
+      }
       console.log(`🔌 Socket disconnected: ${socket.id}`);
     });
   });
+
+  // ==================== PERIODIC CLEANUP ====================
+  // Clean up stale activeUsers entries and hand raise queues every 60 seconds
+  setInterval(async () => {
+    // Clean hand raise queues for rooms with no sockets
+    for (const [roomId, queue] of handRaiseQueues.entries()) {
+      try {
+        const sockets = await io.in(roomId).allSockets();
+        if (sockets.size === 0) {
+          handRaiseQueues.delete(roomId);
+        }
+      } catch (_) {
+        handRaiseQueues.delete(roomId);
+      }
+    }
+
+    // Clean stale rate limit entries (older than 10 seconds)
+    const now = Date.now();
+    for (const [key, timestamp] of socketRateLimits.entries()) {
+      if (now - timestamp > 10000) {
+        socketRateLimits.delete(key);
+      }
+    }
+  }, 60000);
 
   // Helper: find socket by user ID
   function findSocketByUserId(userId) {
@@ -224,7 +321,6 @@ function setupSocketHandlers(io) {
           attendance.leaveTime = new Date();
           attendance.duration = Math.floor((attendance.leaveTime - attendance.joinTime) / 1000);
 
-          // Mark status based on duration threshold (5 minutes minimum)
           const THRESHOLD_SECONDS = 300;
           if (attendance.duration >= THRESHOLD_SECONDS) {
             attendance.status = 'present';
@@ -241,7 +337,7 @@ function setupSocketHandlers(io) {
       }
     }
 
-    // Update room participant status — only for real users (valid ObjectId)
+    // Update room participant status — only for real users
     if (isValidObjectId(userId)) {
       try {
         await Room.updateOne(
