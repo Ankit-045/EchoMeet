@@ -12,6 +12,7 @@ function isValidObjectId(id) {
 // In-memory stores for real-time state
 const handRaiseQueues = new Map(); // roomId -> [{userId, userName, timestamp}]
 const activeUsers = new Map(); // socketId -> {userId, userName, roomId}
+const waitingUsers = new Map(); // roomId -> [{socketId, userId, userName}]
 
 // Simple socket-level rate limiter for high-frequency events
 const socketRateLimits = new Map(); // socketId -> { event: lastTimestamp }
@@ -203,6 +204,68 @@ function setupSocketHandlers(io) {
       }
     });
 
+    // ==================== WAITING ROOM (KNOCKING) ====================
+    socket.on('room:knock', async (data) => {
+      if (!data || !validateRoomId(data.roomId) || !validateString(data.userId, 100)) return;
+      const { roomId, userId, userName = 'Guest' } = data;
+
+      socket.join(`waiting:${roomId}`);
+
+      if (!waitingUsers.has(roomId)) waitingUsers.set(roomId, []);
+      const queue = waitingUsers.get(roomId);
+      if (!queue.find(u => u.userId === userId)) {
+        queue.push({ socketId: socket.id, userId, userName, requestedAt: new Date() });
+      }
+
+      // Notify host in the main room
+      console.log(`🛎️  User ${userName} (${userId}) is knocking for room: ${roomId}`);
+      io.to(roomId).emit('room:request-entry', { userId, userName, socketId: socket.id });
+    });
+
+    socket.on('room:approve-entry', async (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
+      const { roomId, userId, socketId } = data;
+      
+      try {
+        await Room.updateOne(
+          { roomId },
+          { $addToSet: { 'settings.approvedParticipants': userId } }
+        );
+
+        if (socketId) {
+          console.log(`✅ Approving entry for user ${userId} in room ${roomId}`);
+          io.to(socketId).emit('room:entry-granted', { roomId });
+        }
+
+        if (waitingUsers.has(roomId)) {
+          const queue = waitingUsers.get(roomId).filter(u => u.userId !== userId);
+          waitingUsers.set(roomId, queue);
+        }
+      } catch (err) {
+        console.error('Approve entry error:', err);
+      }
+    });
+
+    socket.on('room:deny-entry', (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
+      const { roomId, userId, socketId } = data;
+      
+      if (socketId) {
+        io.to(socketId).emit('room:entry-denied', { roomId });
+      }
+
+      if (waitingUsers.has(roomId)) {
+        const queue = waitingUsers.get(roomId).filter(u => u.userId !== userId);
+        waitingUsers.set(roomId, queue);
+      }
+    });
+
+    socket.on('room:get-waiting-list', (data) => {
+      if (!data || !validateRoomId(data.roomId)) return;
+      const list = waitingUsers.get(data.roomId) || [];
+      socket.emit('room:waiting-list', list);
+    });
+
     // ==================== SCREEN SHARE ====================
     socket.on('screen-share:request', (data) => {
       if (!data || !validateRoomId(data.roomId)) return;
@@ -264,6 +327,17 @@ function setupSocketHandlers(io) {
       if (userData) {
         await handleLeave(socket, io, userData.roomId, userData.userId, userData.userName);
         activeUsers.delete(socket.id);
+      }
+
+      // Clean up waiting users if they disconnect before being approved
+      for (const [roomId, queue] of waitingUsers.entries()) {
+        const index = queue.findIndex(u => u.socketId === socket.id);
+        if (index !== -1) {
+          const entry = queue[index];
+          waitingUsers.set(roomId, queue.filter(u => u.socketId !== socket.id));
+          io.to(roomId).emit('room:knock-cancelled', { userId: entry.userId });
+          break;
+        }
       }
       // Clean up rate limit entries for this socket
       for (const key of socketRateLimits.keys()) {

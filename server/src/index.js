@@ -16,6 +16,7 @@ const { authLimiter, apiLimiter, summaryLimiter } = require('./middleware/rateLi
 
 const app = express();
 const server = http.createServer(app);
+const path = require('path');
 
 const io = new Server(server, {
   cors: {
@@ -57,7 +58,6 @@ app.use('/api/attendance', apiLimiter, attendanceRoutes);
 app.use('/api/summary', summaryLimiter, summaryRoutes);
 
 // Health check
-const path = require('path');
 
 // 1. Existing Health check (Keep this!)
 app.get('/api/health', (req, res) => {

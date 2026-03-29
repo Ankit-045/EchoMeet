@@ -13,7 +13,7 @@ import SummaryPanel from '../components/SummaryPanel';
 import AirDrawingOverlay from '../components/AirDrawingOverlay';
 import {
   MessageSquare, Hand, Users, Brain, Pencil, X, Copy, Settings,
-  LogOut, Monitor, UserCheck, ChevronRight
+  LogOut, Monitor, UserCheck, ChevronRight, User, Clock
 } from 'lucide-react';
 
 // --- Error Boundary for LiveKit ---
@@ -63,6 +63,11 @@ export default function MeetingRoom() {
   const [participantName, setParticipantName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [isDenied, setIsDenied] = useState(false);
+  const [isNotStarted, setIsNotStarted] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState(null);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
 
   // Panel states
   const [activePanel, setActivePanel] = useState(null);
@@ -99,14 +104,69 @@ export default function MeetingRoom() {
     };
   }, [roomInstance]);
 
+  const notifiedParticipantsRef = useRef(new Set());
+
+  // Handle participant join/leave notifications
+  useEffect(() => {
+    if (!roomInstance) return;
+
+    // Reset notified participants on new room instance or reconnection
+    notifiedParticipantsRef.current.clear();
+
+    const handleParticipantConnected = (participant) => {
+      // Prevent duplicate notifications for the same session ID
+      if (notifiedParticipantsRef.current.has(participant.sid)) return;
+      notifiedParticipantsRef.current.add(participant.sid);
+
+      const name = participant.name || participant.identity || 'Someone';
+      toast.success(`${name} joined the meeting`, {
+        position: 'top-right',
+        duration: 3000,
+      });
+    };
+
+    const handleParticipantDisconnected = (participant) => {
+      // Remove from set when they leave so they can be notified if they rejoin with a new SID
+      notifiedParticipantsRef.current.delete(participant.sid);
+
+      const name = participant.name || participant.identity || 'Someone';
+      toast(`${name} left the meeting`, {
+        icon: '🏃',
+        position: 'top-right',
+        duration: 3000,
+      });
+    };
+
+    roomInstance.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    roomInstance.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+
+    console.log('✅ Room instance events initialized');
+    return () => {
+      roomInstance.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      roomInstance.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    };
+  }, [roomInstance]);
+
   // Join room on mount — wait for auth to resolve first
   useEffect(() => {
     if (authLoading) return;
 
     const join = async () => {
+      console.log(`🚀 Attempting to join room: ${roomId}`);
       try {
         const res = await joinRoom(roomId, { guestName: user?.name || 'Guest' });
-        if (!res.data.livekitToken) {
+        console.log('📥 Join response:', res.data);
+        
+        if (res.data?.requiresApproval) {
+          console.log('🕒 Approval required, moving to waiting state');
+          setIsWaiting(true);
+          setParticipantId(res.data.participantId);
+          setParticipantName(res.data.participantName);
+          setLoading(false);
+          return;
+        }
+
+        if (!res.data?.livekitToken) {
           setError('Video token not received. LiveKit may be misconfigured.');
           setLoading(false);
           return;
@@ -117,8 +177,27 @@ export default function MeetingRoom() {
         setParticipantId(res.data.participantId);
         setParticipantName(res.data.participantName);
         setLoading(false);
+        console.log('✅ Joined successfully as', res.data.isHost ? 'Host' : 'Participant');
       } catch (err) {
         setError(err.response?.data?.error || 'Failed to join meeting');
+        if (err.response?.status === 403) {
+          if (err.response.data?.requiresApproval) {
+            console.log('🕒 Approval required (403), moving to waiting state');
+            const data = err.response.data;
+            setIsWaiting(true);
+            setParticipantId(data.participantId);
+            setParticipantName(data.participantName);
+            setLoading(false);
+            return;
+          }
+          if (err.response.data?.notStarted) {
+            console.log('🕒 Meeting not started yet');
+            setIsNotStarted(true);
+            setScheduledAt(new Date(err.response.data.scheduledAt));
+            setLoading(false);
+            return;
+          }
+        }
         setLoading(false);
       }
     };
@@ -129,36 +208,99 @@ export default function MeetingRoom() {
   useEffect(() => {
     if (!socket || !participantId) return;
 
-    const isGuestParticipant = participantId.startsWith('guest_');
+    const emitSocketActions = () => {
+      if (!socket.connected) {
+        console.warn('⚠️ Socket not connected, skipping emissions. Will re-emit on "connect".');
+        return;
+      }
 
-    const emitJoin = () => {
-      socket.emit('room:join', {
-        roomId,
-        userId: participantId,
-        userName: participantName,
-        isGuest: isGuestParticipant
-      });
+      if (isWaiting) {
+        console.log('🛎️ Knocking on room:', roomId);
+        socket.emit('room:knock', { roomId, userId: participantId, userName: participantName });
+      } else if (participantId) {
+        console.log('🔗 Joining socket room:', roomId);
+        socket.emit('room:join', {
+          roomId,
+          userId: participantId,
+          userName: participantName,
+          isGuest: participantId.startsWith('guest_')
+        });
+
+        if (isHost) {
+          console.log('📋 Fetching waiting list for host');
+          socket.emit('room:get-waiting-list', { roomId });
+        }
+      }
     };
 
-    // Join the room immediately
-    emitJoin();
+    // Initial emit
+    emitSocketActions();
 
-    // Re-join on socket reconnect so server participant tracking stays accurate
-    socket.on('connect', emitJoin);
+    // Re-emit on socket reconnect
+    socket.on('connect', () => {
+      console.log('🔄 Socket reconnected, re-emitting actions...');
+      emitSocketActions();
+    });
 
-    socket.on('room:participant-count', (count) => setParticipantCount(count));
+    socket.on('room:participant-count', (count) => {
+      console.log(`👥 Participant count: ${count}`);
+      setParticipantCount(count);
+    });
+
     socket.on('meeting:ended', () => {
+      console.log('🏁 Meeting ended by host');
       toast('Meeting ended by host', { icon: '👋' });
       navigate('/dashboard');
     });
 
+    // Handle entry approval/denial for knocking users
+    if (isWaiting) {
+      socket.on('room:entry-granted', () => {
+        console.log('🎊 Entry granted! Reloading room...');
+        setIsWaiting(false);
+        window.location.reload(); 
+      });
+
+      socket.on('room:entry-denied', () => {
+        console.log('🚫 Entry denied');
+        setIsWaiting(false);
+        setIsDenied(true);
+      });
+    }
+
+    // Host handlers for knocking users
+    if (isHost) {
+      socket.on('room:waiting-list', (list) => {
+        console.log('🕒 Waiting list received:', list);
+        setPendingApprovals(list);
+      });
+      socket.on('room:request-entry', (data) => {
+        console.log('🛎️ New knocking request:', data);
+        setPendingApprovals(prev => {
+          if (prev.find(u => u.userId === data.userId)) return prev;
+          return [...prev, data];
+        });
+        toast(`${data.userName} is knocking...`, { icon: '🔔', position: 'top-right' });
+      });
+      socket.on('room:knock-cancelled', ({ userId }) => {
+        console.log('❌ Knock cancelled by user:', userId);
+        setPendingApprovals(prev => prev.filter(u => u.userId !== userId));
+      });
+    }
+
     return () => {
+      console.log('🧹 Cleaning up socket effect for participant:', participantId);
       socket.emit('room:leave', { roomId, userId: participantId, userName: participantName });
-      socket.off('connect', emitJoin);
+      socket.off('connect');
       socket.off('room:participant-count');
       socket.off('meeting:ended');
+      socket.off('room:entry-granted');
+      socket.off('room:entry-denied');
+      socket.off('room:waiting-list');
+      socket.off('room:request-entry');
+      socket.off('room:knock-cancelled');
     };
-  }, [socket, roomId, participantId, participantName, navigate]);
+  }, [socket, roomId, participantId, participantName, navigate, isHost, isWaiting]);
 
   // Speech-to-text (fixed closure bug)
   const toggleTranscription = useCallback(() => {
@@ -261,6 +403,16 @@ export default function MeetingRoom() {
     toast.success('Meeting link copied!');
   };
 
+  const handleApproveEntry = (p) => {
+    socket?.emit('room:approve-entry', { roomId, userId: p.userId, socketId: p.socketId });
+    setPendingApprovals(prev => prev.filter(u => u.userId !== p.userId));
+  };
+
+  const handleDenyEntry = (p) => {
+    socket?.emit('room:deny-entry', { roomId, userId: p.userId, socketId: p.socketId });
+    setPendingApprovals(prev => prev.filter(u => u.userId !== p.userId));
+  };
+
   const togglePanel = (panel) => setActivePanel(prev => prev === panel ? null : panel);
 
   if (loading) {
@@ -269,6 +421,70 @@ export default function MeetingRoom() {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-dark-400">Joining meeting...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isNotStarted) {
+    const timeStr = scheduledAt ? scheduledAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const dateStr = scheduledAt ? scheduledAt.toLocaleDateString() : '';
+
+    return (
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center px-4">
+        <div className="glass rounded-2xl p-10 text-center max-w-md animate-fade-in">
+          <div className="w-20 h-20 bg-accent-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Clock className="w-10 h-10 text-accent-400" />
+          </div>
+          <h2 className="text-3xl font-bold mb-3">Not Started Yet</h2>
+          <p className="text-dark-300 mb-2">This meeting is scheduled for:</p>
+          <div className="bg-dark-800/50 rounded-xl p-4 mb-8">
+            <p className="text-xl font-bold text-accent-400">{timeStr}</p>
+            <p className="text-sm text-dark-400">{dateStr}</p>
+          </div>
+          <p className="text-dark-400 mb-8 text-sm">
+            Please come back 5 minutes before the start time to join the room.
+          </p>
+          <button onClick={() => navigate('/dashboard')} className="w-full py-3 bg-dark-800 hover:bg-dark-700 rounded-xl font-semibold transition-colors">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isWaiting) {
+    return (
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center px-4">
+        <div className="glass rounded-2xl p-8 text-center max-w-md animate-fade-in">
+          <div className="w-16 h-16 bg-primary-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <User className="w-8 h-8 text-primary-400 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Waiting for Approval</h2>
+          <p className="text-dark-400 mb-8">The host has been notified that you're waiting. Please hang tight!</p>
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+            <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+          </div>
+          <button onClick={() => navigate('/dashboard')} className="text-dark-500 hover:text-dark-300 transition-colors">
+            Cancel and Return
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDenied) {
+    return (
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center px-4">
+        <div className="glass rounded-2xl p-8 text-center max-w-md">
+          <X className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Entry Denied</h2>
+          <p className="text-dark-400 mb-6">The host did not allow you to join this meeting.</p>
+          <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-primary-600 hover:bg-primary-500 rounded-xl font-medium transition-colors">
+            Back to Dashboard
+          </button>
         </div>
       </div>
     );
@@ -337,6 +553,10 @@ export default function MeetingRoom() {
                 }}
                 onDisconnected={() => {
                   console.log('❌ LiveKit disconnected from room:', roomId);
+                  // Only redirect non-hosts. Hosts handle their own exit logic.
+                  if (!isHost) {
+                    navigate('/dashboard');
+                  }
                 }}
                 onError={(error) => {
                   console.error('LiveKit connection error:', error);
@@ -360,6 +580,33 @@ export default function MeetingRoom() {
               socket={socket}
               onClose={() => setDrawingActive(false)}
             />
+          )}
+
+          {/* Host Approval Notifications */}
+          {isHost && pendingApprovals.length > 0 && (
+            <div className="absolute top-6 right-6 z-50 flex flex-col gap-3 max-w-sm animate-slide-in-right">
+              {pendingApprovals.map(p => (
+                <div key={p.userId} className="glass p-4 rounded-xl border-primary-500/30 shadow-2xl flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary-500/20 flex items-center justify-center font-bold text-primary-400">
+                      {p.userName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{p.userName} wants to join</p>
+                      <p className="text-xs text-dark-400">Private Meeting</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleApproveEntry(p)} className="flex-1 py-1.5 bg-primary-600 hover:bg-primary-500 rounded-lg text-xs font-semibold transition-colors">
+                      Allow
+                    </button>
+                    <button onClick={() => handleDenyEntry(p)} className="flex-1 py-1.5 bg-dark-700 hover:bg-dark-600 rounded-lg text-xs font-semibold transition-colors">
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

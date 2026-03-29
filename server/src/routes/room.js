@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { AccessToken } = require('livekit-server-sdk');
 const Room = require('../models/Room');
+const Meeting = require('../models/Meeting');
 const { auth, optionalAuth } = require('../middleware/auth');
 const { validateCreateRoom, validateJoinRoom } = require('../middleware/validate');
 
@@ -28,7 +29,9 @@ router.post('/create', auth, validateCreateRoom, async (req, res) => {
         allowGuestAccess: settings?.allowGuestAccess !== false,
         allowScreenShare: settings?.allowScreenShare !== false,
         allowChat: settings?.allowChat !== false,
-        allowHandRaise: settings?.allowHandRaise !== false
+        allowHandRaise: settings?.allowHandRaise !== false,
+        isPrivate: settings?.isPrivate === true,
+        approvedParticipants: [req.user._id.toString()]
       }
     });
 
@@ -52,10 +55,42 @@ router.post('/join/:roomId', optionalAuth, validateJoinRoom, async (req, res) =>
   try {
     const { roomId } = req.params;
     const { guestName } = req.body;
-    const room = await Room.findOne({ roomId, isActive: true });
-
+    let room = await Room.findOne({ roomId, isActive: true });
+    
     if (!room) {
-      return res.status(404).json({ error: 'Room not found or ended' });
+      const meeting = await Meeting.findOne({ meetingId: roomId });
+      if (meeting) {
+        const now = new Date();
+        const startTime = new Date(meeting.scheduledAt);
+        const joinWindow = new Date(startTime.getTime() - 5 * 60000); // 5 mins before
+
+        if (now < joinWindow) {
+          return res.status(403).json({ 
+            error: 'Meeting has not started yet', 
+            notStarted: true,
+            scheduledAt: meeting.scheduledAt 
+          });
+        }
+
+        // Auto-create room for the scheduled meeting
+        room = new Room({
+          roomId: meeting.meetingId,
+          name: meeting.title,
+          host: meeting.hostId,
+          participants: [],
+          settings: {
+            ...meeting.settings, // Inherit if exists
+            maxParticipants: 25,
+            allowGuestAccess: true,
+            allowScreenShare: true,
+            allowChat: true,
+            allowHandRaise: true
+          }
+        });
+        await room.save();
+      } else {
+        return res.status(404).json({ error: 'Room found or ended' });
+      }
     }
 
     const activeParticipants = room.participants.filter(p => p.isActive);
@@ -88,6 +123,21 @@ router.post('/join/:roomId', optionalAuth, validateJoinRoom, async (req, res) =>
     }
 
     const isHost = room.host.toString() === (req.user?._id?.toString() || '');
+    
+    // Privacy check
+    if (room.settings.isPrivate && !isHost) {
+      const isApproved = room.settings.approvedParticipants.includes(participantId);
+      if (!isApproved) {
+        return res.status(403).json({ 
+          error: 'Approval required to join this meeting', 
+          requiresApproval: true,
+          roomId,
+          participantId,
+          participantName
+        });
+      }
+    }
+
     const livekitToken = await generateLivekitToken(roomId, participantId, participantName, isHost);
     if (!livekitToken) {
       return res.status(500).json({ error: 'Failed to generate video token. Check LiveKit configuration.' });

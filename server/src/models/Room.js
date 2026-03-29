@@ -19,7 +19,9 @@ const roomSchema = new mongoose.Schema({
     allowChat: { type: Boolean, default: true },
     allowHandRaise: { type: Boolean, default: true },
     isRecording: { type: Boolean, default: false },
-    screenShareWhitelist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    isPrivate: { type: Boolean, default: false },
+    screenShareWhitelist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    approvedParticipants: [{ type: String }] // List of user identities allowed in private meetings
   },
   isActive: { type: Boolean, default: true },
   startedAt: { type: Date, default: Date.now },

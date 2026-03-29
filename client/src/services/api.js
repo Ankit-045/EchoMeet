@@ -40,8 +40,10 @@ export const endRoom = (roomId) => api.post(`/rooms/${roomId}/end`);
 export const toggleScreenSharePermission = (roomId, data) => api.post(`/rooms/${roomId}/screen-share-permission`, data);
 
 // Meetings
+export const scheduleMeeting = (data) => api.post('/meetings', data);
 export const getMyMeetings = () => api.get('/meetings/my-meetings');
 export const getActiveMeetings = () => api.get('/meetings/active');
+export const deleteMeeting = (id) => api.delete(`/meetings/${id}`);
 
 // Chat
 export const getChatHistory = (roomId, type) => api.get(`/chat/${roomId}?type=${type || 'group'}`);
