@@ -24,6 +24,7 @@ const roomSchema = new mongoose.Schema({
     approvedParticipants: [{ type: String }] // List of user identities allowed in private meetings
   },
   isActive: { type: Boolean, default: true },
+  attendanceStartedAt: { type: Date },
   startedAt: { type: Date, default: Date.now },
   endedAt: { type: Date },
   createdAt: { type: Date, default: Date.now }

@@ -47,6 +47,13 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.1);
 }
 
+.glass-meta {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
 /* Gradient text */
 .gradient-text {
   background: linear-gradient(135deg, #818cf8 0%, #d946ef 50%, #f0abfc 100%);
@@ -86,6 +93,63 @@ body {
 .drawing-overlay.active {
   pointer-events: auto;
   cursor: crosshair;
+}
+
+.gesture-status {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  z-index: 50;
+}
+
+.overlay-message {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 1px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 45;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  margin: 12px 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  transition: all 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
 }
 
 /* Hand raise animation */

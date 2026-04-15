@@ -36,6 +36,7 @@ export const createRoom = (data) => api.post('/rooms/create', data);
 export const joinRoom = (roomId, data) => api.post(`/rooms/join/${roomId}`, data);
 export const getRoomInfo = (roomId) => api.get(`/rooms/${roomId}`);
 export const updateRoomSettings = (roomId, data) => api.put(`/rooms/${roomId}/settings`, data);
+export const startAttendance = (roomId) => api.post(`/rooms/${roomId}/attendance/start`);
 export const endRoom = (roomId) => api.post(`/rooms/${roomId}/end`);
 export const toggleScreenSharePermission = (roomId, data) => api.post(`/rooms/${roomId}/screen-share-permission`, data);
 

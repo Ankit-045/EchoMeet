@@ -3,8 +3,7 @@
  * Uses lightweight regex checks — no external dependencies.
  */
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROOM_ID_REGEX = /^[A-Z0-9]{6,10}$/;
+const { EMAIL_REGEX, ROOM_ID_REGEX } = require('../lib/validation/common');
 
 function validateBody(rules) {
   return (req, res, next) => {

@@ -46,6 +46,22 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Optional request latency logging (set LOG_LATENCY=1 to enable)
+app.use((req, res, next) => {
+  if (!process.env.LOG_LATENCY) return next();
+  if (!req.originalUrl.startsWith('/api')) return next();
+
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const thresholdMs = Number(process.env.LOG_LATENCY_THRESHOLD_MS || 0);
+    if (durationMs >= thresholdMs) {
+      console.log(`⏱️  ${req.method} ${req.originalUrl} ${res.statusCode} - ${durationMs.toFixed(1)}ms`);
+    }
+  });
+  next();
+});
+
 // Make io available to routes
 app.set('io', io);
 
