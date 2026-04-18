@@ -1,21 +1,6 @@
+import { APP_BASE_URL } from "@/config/appConfig";
+
 const MEETING_ID_REGEX = /^[A-Z0-9]{4,20}$/;
-
-function stripTrailingSlash(value) {
-    return value.replace(/\/+$/, "");
-}
-
-export function resolveAppOrigin() {
-    const envOrigin = import.meta.env.VITE_PUBLIC_APP_URL;
-    if (typeof envOrigin === "string" && envOrigin.trim()) {
-        return stripTrailingSlash(envOrigin.trim());
-    }
-
-    if (typeof window !== "undefined" && window.location?.origin) {
-        return stripTrailingSlash(window.location.origin);
-    }
-
-    return "";
-}
 
 export function normalizeMeetingId(value) {
     if (!value) return "";
@@ -35,7 +20,7 @@ export function buildJoinPath(meetingId) {
     return `/join/${normalized}`;
 }
 
-export function buildJoinUrl(meetingId, origin = resolveAppOrigin()) {
+export function buildJoinUrl(meetingId, origin = APP_BASE_URL) {
     if (!origin) {
         throw new Error("App origin is not configured");
     }
