@@ -59,7 +59,7 @@ function App() {
             />
             <Route path="/meeting/:roomId" element={<MeetingRoomPage />} />
             <Route path="/join" element={<JoinMeetingPage />} />
-            <Route path="/join/:roomId" element={<JoinMeetingPage />} />
+            <Route path="/join/:meetingId" element={<JoinMeetingPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </SocketProvider>

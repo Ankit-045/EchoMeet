@@ -3,7 +3,7 @@
  * Uses lightweight regex checks — no external dependencies.
  */
 
-const { EMAIL_REGEX, ROOM_ID_REGEX } = require('../lib/validation/common');
+const { EMAIL_REGEX, validateRoomId } = require('../lib/validation/common');
 
 function validateBody(rules) {
   return (req, res, next) => {
@@ -69,6 +69,15 @@ function validateBody(rules) {
   };
 }
 
+function validateRoomIdParam(req, res, next) {
+  const roomId = String(req.params.roomId || '').trim().toUpperCase();
+  if (!validateRoomId(roomId)) {
+    return res.status(400).json({ error: 'Invalid meeting code format' });
+  }
+  req.params.roomId = roomId;
+  return next();
+}
+
 // Pre-built validators for common routes
 const validateRegister = validateBody({
   name: { required: true, type: 'string', minLength: 2, maxLength: 50 },
@@ -106,6 +115,7 @@ const validateRoomSettings = validateBody({
 
 module.exports = {
   validateBody,
+  validateRoomIdParam,
   validateRegister,
   validateLogin,
   validateGuestAccess,

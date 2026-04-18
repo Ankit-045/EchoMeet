@@ -1,17 +1,15 @@
 import React from "react";
 import toast from "react-hot-toast";
-import {
-  Copy,
-  Share2,
-  MessageCircle,
-  Send,
-} from "lucide-react";
+import { Copy, Share2, MessageCircle, Send } from "lucide-react";
 import {
   copyMeetingJoinLink,
   getPlatformShareUrl,
   shareMeetingJoinLink,
 } from "@features/meeting/share/shareMeeting";
-import { isValidMeetingId, normalizeMeetingId } from "@features/meeting/linking/meetingLink";
+import {
+  isValidMeetingId,
+  normalizeMeetingId,
+} from "@features/meeting/linking/meetingLink";
 
 export default function MeetingShareActions({
   meetingId,

@@ -1,14 +1,14 @@
 const mongoose = require('mongoose');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROOM_ID_REGEX = /^[A-Z0-9]{6,10}$/;
+const ROOM_ID_REGEX = /^[A-Z0-9]{4,20}$/;
 
 function validateString(val, maxLen = 500) {
     return typeof val === 'string' && val.length > 0 && val.length <= maxLen;
 }
 
 function validateRoomId(val) {
-    return typeof val === 'string' && val.length >= 4 && val.length <= 20;
+    return typeof val === 'string' && ROOM_ID_REGEX.test(val.trim().toUpperCase());
 }
 
 function isValidObjectId(id) {

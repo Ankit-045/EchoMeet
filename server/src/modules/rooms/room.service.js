@@ -2,16 +2,22 @@ const { v4: uuidv4 } = require('uuid');
 const Room = require('../../models/Room');
 const Meeting = require('../../models/Meeting');
 const { generateLivekitToken } = require('../../lib/livekit/tokenService');
+const { validateRoomId } = require('../../lib/validation/common');
 
 async function joinRoom({ roomId, guestName, user }) {
-    let room = await Room.findOne({ roomId });
+    const normalizedRoomId = String(roomId || '').trim().toUpperCase();
+    if (!validateRoomId(normalizedRoomId)) {
+        throw { status: 400, body: { error: 'Invalid meeting code format' } };
+    }
+
+    let room = await Room.findOne({ roomId: normalizedRoomId });
 
     if (room && !room.isActive) {
         throw { status: 410, body: { error: 'Room has ended' } };
     }
 
     if (!room) {
-        const meeting = await Meeting.findOne({ meetingId: roomId });
+        const meeting = await Meeting.findOne({ meetingId: normalizedRoomId });
         if (meeting) {
             const now = new Date();
             const startTime = new Date(meeting.scheduledAt);
@@ -45,7 +51,7 @@ async function joinRoom({ roomId, guestName, user }) {
             });
             await room.save();
         } else {
-            throw { status: 404, body: { error: 'Room found or ended' } };
+            throw { status: 404, body: { error: 'Meeting not found or has ended' } };
         }
     }
 
@@ -89,7 +95,7 @@ async function joinRoom({ roomId, guestName, user }) {
                 body: {
                     error: 'Approval required to join this meeting',
                     requiresApproval: true,
-                    roomId,
+                    roomId: normalizedRoomId,
                     participantId,
                     participantName
                 }
@@ -97,7 +103,7 @@ async function joinRoom({ roomId, guestName, user }) {
         }
     }
 
-    const livekitToken = await generateLivekitToken(roomId, participantId, participantName, isHost);
+    const livekitToken = await generateLivekitToken(normalizedRoomId, participantId, participantName, isHost);
     if (!livekitToken) {
         throw { status: 500, body: { error: 'Failed to generate video token. Check LiveKit configuration.' } };
     }

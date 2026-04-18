@@ -1,7 +1,10 @@
 const express = require('express');
-const Room = require('../models/Room');
 const { auth, optionalAuth } = require('../middleware/auth');
-const { validateCreateRoom, validateJoinRoom } = require('../middleware/validate');
+const {
+    validateCreateRoom,
+    validateJoinRoom,
+    validateRoomIdParam,
+} = require('../middleware/validate');
 const {
     createRoom,
     joinRoomHandler,
@@ -18,21 +21,21 @@ const router = express.Router();
 router.post('/create', auth, validateCreateRoom, createRoom);
 
 // Join room
-router.post('/join/:roomId', optionalAuth, validateJoinRoom, joinRoomHandler);
+router.post('/join/:roomId', optionalAuth, validateRoomIdParam, validateJoinRoom, joinRoomHandler);
 
 // Start attendance (host only)
-router.post('/:roomId/attendance/start', auth, startAttendance);
+router.post('/:roomId/attendance/start', auth, validateRoomIdParam, startAttendance);
 
 // Get room info
-router.get('/:roomId', optionalAuth, getRoomInfo);
+router.get('/:roomId', optionalAuth, validateRoomIdParam, getRoomInfo);
 
 // Update room settings (host only)
-router.put('/:roomId/settings', auth, updateRoomSettings);
+router.put('/:roomId/settings', auth, validateRoomIdParam, updateRoomSettings);
 
 // End room (host only)
-router.post('/:roomId/end', auth, endRoom);
+router.post('/:roomId/end', auth, validateRoomIdParam, endRoom);
 
 // Toggle screen share permission
-router.post('/:roomId/screen-share-permission', auth, toggleScreenSharePermission);
+router.post('/:roomId/screen-share-permission', auth, validateRoomIdParam, toggleScreenSharePermission);
 
 module.exports = router;

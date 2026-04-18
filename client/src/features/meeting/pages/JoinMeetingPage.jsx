@@ -11,7 +11,7 @@ import toast from "react-hot-toast";
 import { Video, User, ArrowRight, Users } from "lucide-react";
 
 export default function JoinMeetingPage() {
-  const { roomId: routeMeetingId } = useParams();
+  const { meetingId: routeMeetingId } = useParams();
   const location = useLocation();
   const { user, loginUser } = useAuth();
   const navigate = useNavigate();
@@ -86,7 +86,9 @@ export default function JoinMeetingPage() {
             <input
               type="text"
               value={meetingCode}
-              onChange={(e) => setMeetingCode(normalizeMeetingId(e.target.value))}
+              onChange={(e) =>
+                setMeetingCode(normalizeMeetingId(e.target.value))
+              }
               className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl focus:outline-none focus:border-primary-500 transition-colors uppercase font-mono text-center"
               placeholder="AB12CD34"
               maxLength={20}
