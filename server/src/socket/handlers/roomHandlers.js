@@ -1,4 +1,5 @@
 function registerRoomHandlers({ io, socket, state, helpers, models }) {
+    const { Room } = models;
     const { validateRoomId, validateString, isValidObjectId, handleLeave, attendanceService } = helpers;
     const { handRaiseQueues, activeUsers, waitingUsers } = state;
 
