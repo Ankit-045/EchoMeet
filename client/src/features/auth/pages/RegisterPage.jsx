@@ -1,9 +1,15 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { register as registerApi } from "@/services/api";
+import {
+  register as registerApi,
+  googleSignIn as googleSignInApi,
+} from "@/services/api";
 import toast from "react-hot-toast";
 import { Video, Mail, Lock, User, ArrowRight } from "lucide-react";
+import GoogleSignInButton from "@/features/auth/components/GoogleSignInButton";
+
+const hasGoogleAuth = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
 export default function RegisterPage() {
   const [form, setForm] = useState({
@@ -13,6 +19,7 @@ export default function RegisterPage() {
     confirmPassword: "",
   });
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { loginUser } = useAuth();
   const navigate = useNavigate();
 
@@ -39,6 +46,30 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    const credential = credentialResponse?.credential;
+    if (!credential) {
+      toast.error("Google sign-up failed");
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const res = await googleSignInApi({ credential });
+      loginUser(res.data.user, res.data.token);
+      toast.success("Account created!");
+      navigate("/dashboard");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Google sign-up failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    toast.error("Google sign-up was cancelled");
   };
 
   return (
@@ -148,6 +179,15 @@ export default function RegisterPage() {
               </>
             )}
           </button>
+
+          {hasGoogleAuth ? (
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              loading={googleLoading}
+              mode="signup"
+            />
+          ) : null}
         </form>
 
         <p className="text-center mt-6 text-dark-400">

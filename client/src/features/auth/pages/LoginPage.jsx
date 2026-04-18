@@ -1,13 +1,20 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { login as loginApi } from "@/services/api";
+import {
+  login as loginApi,
+  googleSignIn as googleSignInApi,
+} from "@/services/api";
 import toast from "react-hot-toast";
 import { Video, Mail, Lock, ArrowRight } from "lucide-react";
+import GoogleSignInButton from "@/features/auth/components/GoogleSignInButton";
+
+const hasGoogleAuth = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
 export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { loginUser } = useAuth();
   const navigate = useNavigate();
 
@@ -24,6 +31,30 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    const credential = credentialResponse?.credential;
+    if (!credential) {
+      toast.error("Google sign-in failed");
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const res = await googleSignInApi({ credential });
+      loginUser(res.data.user, res.data.token);
+      toast.success("Welcome back!");
+      navigate("/dashboard");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    toast.error("Google sign-in was cancelled");
   };
 
   return (
@@ -97,6 +128,15 @@ export default function LoginPage() {
               </>
             )}
           </button>
+
+          {hasGoogleAuth ? (
+            <GoogleSignInButton
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              loading={googleLoading}
+              mode="signin"
+            />
+          ) : null}
         </form>
 
         <p className="text-center mt-6 text-dark-400">

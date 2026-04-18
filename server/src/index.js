@@ -34,6 +34,7 @@ const io = new Server(server, {
 app.use(helmet({
   contentSecurityPolicy: false, // Allow LiveKit WebRTC connections
   crossOriginEmbedderPolicy: false, // Allow MediaPipe CDN
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // Allow Google popup postMessage flow
 }));
 
 // CORS

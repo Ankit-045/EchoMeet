@@ -87,6 +87,7 @@ PORT=5000
 MONGODB_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 JWT_EXPIRE=7d
+GOOGLE_CLIENT_ID=your_google_oauth_web_client_id
 LIVEKIT_URL=wss://your-livekit-url.livekit.cloud
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
@@ -100,6 +101,7 @@ VITE_LIVEKIT_URL=wss://your-livekit-url.livekit.cloud
 VITE_PUBLIC_APP_URL=http://localhost:5173
 VITE_API_URL=/api
 VITE_BACKEND_URL=http://localhost:5000
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_web_client_id
 ```
 
 For production, configure these values in your deployment provider environment settings:
@@ -108,7 +110,15 @@ For production, configure these values in your deployment provider environment s
 VITE_PUBLIC_APP_URL=https://echomeet-frontend-t85p.onrender.com
 VITE_API_URL=https://<your-backend-domain>/api
 VITE_BACKEND_URL=https://<your-backend-domain>
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_web_client_id
 ```
+
+### Google Sign-In Setup
+
+- Create a Google OAuth 2.0 Web Client in Google Cloud Console.
+- Add your frontend origins (for example `http://localhost:5173` and your production domain) to Authorized JavaScript Origins.
+- Use the same client ID in both backend `GOOGLE_CLIENT_ID` and frontend `VITE_GOOGLE_CLIENT_ID`.
+- Keep `GOOGLE_CLIENT_ID` server-side only for secure token audience verification.
 
 ### 3. Running Locally
 

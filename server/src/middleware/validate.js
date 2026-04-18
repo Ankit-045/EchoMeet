@@ -94,6 +94,10 @@ const validateGuestAccess = validateBody({
   name: { type: 'string', maxLength: 50 },
 });
 
+const validateGoogleSignIn = validateBody({
+  credential: { required: true, type: 'string', minLength: 20 },
+});
+
 const validateCreateRoom = validateBody({
   name: { type: 'string', maxLength: 100 },
 });
@@ -119,6 +123,7 @@ module.exports = {
   validateRegister,
   validateLogin,
   validateGuestAccess,
+  validateGoogleSignIn,
   validateCreateRoom,
   validateJoinRoom,
   validateGenerateSummary,
