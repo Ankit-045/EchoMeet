@@ -9,13 +9,18 @@ import {
 } from "@/services/api";
 import toast from "react-hot-toast";
 import AttendancePanel from "@features/attendance/components/AttendancePanel";
+import { MeetingShareActions } from "@features/meeting/share";
+import {
+  buildJoinUrl,
+  isValidMeetingId,
+  normalizeMeetingId,
+} from "@features/meeting/linking/meetingLink";
 import {
   Plus,
   Video,
   LogOut,
   Clock,
   Users,
-  Copy,
   ExternalLink,
   Calendar,
   Trash2,
@@ -31,6 +36,7 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [attendanceRoomId, setAttendanceRoomId] = useState(null);
+  const [shareMeetingId, setShareMeetingId] = useState("");
 
   // Form states
   const [roomName, setRoomName] = useState("");
@@ -62,8 +68,12 @@ export default function DashboardPage() {
         name: roomName || undefined,
         settings: { isPrivate },
       });
+      const createdRoomId = res.data?.room?.roomId;
       toast.success("Meeting created!");
-      navigate(`/meeting/${res.data.room.roomId}`);
+      if (createdRoomId) {
+        setShareMeetingId(createdRoomId);
+      }
+      navigate(`/meeting/${createdRoomId}`);
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to create meeting");
     } finally {
@@ -80,15 +90,22 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
-      await scheduleMeeting({
+      const res = await scheduleMeeting({
         title: scheduleTitle,
         scheduledAt,
         duration: parseInt(scheduleDuration),
         isPrivate,
       });
+      const createdMeetingId = res.data?.meeting?.meetingId;
       toast.success("Meeting scheduled!");
       setShowSchedule(false);
       setScheduleTitle("");
+      setScheduleDate("");
+      setScheduleTime("");
+      setScheduleDuration("60");
+      if (createdMeetingId) {
+        setShareMeetingId(createdMeetingId);
+      }
       fetchMeetings();
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to schedule meeting");
@@ -110,18 +127,16 @@ export default function DashboardPage() {
   };
 
   const handleJoin = () => {
-    if (!joinCode.trim()) return toast.error("Enter a meeting code");
-    navigate(`/join/${joinCode.trim().toUpperCase()}`);
+    const normalized = normalizeMeetingId(joinCode);
+    if (!isValidMeetingId(normalized)) {
+      return toast.error("Enter a valid meeting code");
+    }
+    navigate(`/join/${normalized}`);
   };
 
   const handleLogout = () => {
     logout();
     navigate("/");
-  };
-
-  const copyLink = (roomId) => {
-    navigator.clipboard.writeText(`${window.location.origin}/join/${roomId}`);
-    toast.success("Link copied!");
   };
 
   const openAttendance = (roomId) => {
@@ -302,13 +317,7 @@ export default function DashboardPage() {
                       <span className="text-xs font-mono text-dark-500 bg-dark-800 px-2 py-1 rounded">
                         {m.meetingId}
                       </span>
-                      <button
-                        onClick={() => copyLink(m.meetingId)}
-                        className="p-2 hover:bg-dark-800 rounded-lg transition-colors text-dark-400"
-                        title="Copy Link"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
+                      <MeetingShareActions meetingId={m.meetingId} compact />
                       <button
                         onClick={() => handleDeleteMeeting(m._id)}
                         className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-red-400"
@@ -363,12 +372,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => copyLink(m.roomId)}
-                      className="p-2 rounded-lg hover:bg-dark-700 transition-colors text-dark-400"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
+                    <MeetingShareActions meetingId={m.roomId} compact />
                     {m.isActive && (
                       <button
                         onClick={() => navigate(`/meeting/${m.roomId}`)}
@@ -410,6 +414,55 @@ export default function DashboardPage() {
               </button>
             </div>
             <AttendancePanel roomId={attendanceRoomId} />
+          </div>
+        </div>
+      )}
+
+      {shareMeetingId && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-dark-950/80 backdrop-blur-sm"
+            onClick={() => setShareMeetingId("")}
+          ></div>
+          <div className="glass rounded-2xl w-full max-w-xl p-8 relative animate-scale-in">
+            <button
+              onClick={() => setShareMeetingId("")}
+              className="absolute top-6 right-6 text-dark-400 hover:text-white transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-2xl font-bold mb-2">Meeting Ready to Share</h3>
+            <p className="text-dark-400 mb-6">
+              Send this join link so people can open and join in one click.
+            </p>
+
+            <div className="mb-6 p-4 rounded-xl bg-dark-800/60 border border-dark-700">
+              <p className="text-xs text-dark-500 mb-2">Join URL</p>
+              <p className="font-mono text-sm break-all text-dark-200">
+                {buildJoinUrl(shareMeetingId)}
+              </p>
+            </div>
+
+            <div className="mb-6 overflow-x-auto">
+              <MeetingShareActions meetingId={shareMeetingId} />
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShareMeetingId("")}
+                className="px-4 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 transition-colors text-sm font-semibold"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => navigate(`/meeting/${shareMeetingId}`)}
+                className="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 transition-colors text-sm font-semibold"
+              >
+                Go to Meeting
+              </button>
+            </div>
           </div>
         </div>
       )}

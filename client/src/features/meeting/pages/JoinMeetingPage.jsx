@@ -1,18 +1,44 @@
-import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { guestLogin } from "@/services/api";
+import {
+  getMeetingIdFromLocation,
+  isValidMeetingId,
+  normalizeMeetingId,
+} from "@features/meeting/linking/meetingLink";
 import toast from "react-hot-toast";
 import { Video, User, ArrowRight, Users } from "lucide-react";
 
 export default function JoinMeetingPage() {
-  const { roomId } = useParams();
+  const { roomId: routeMeetingId } = useParams();
+  const location = useLocation();
   const { user, loginUser } = useAuth();
   const navigate = useNavigate();
+  const parsedMeetingId = useMemo(
+    () =>
+      getMeetingIdFromLocation({
+        pathname: location.pathname,
+        search: location.search,
+        routeParam: routeMeetingId,
+      }),
+    [location.pathname, location.search, routeMeetingId],
+  );
+  const [meetingCode, setMeetingCode] = useState(parsedMeetingId);
   const [guestName, setGuestName] = useState("");
   const [loading, setLoading] = useState(false);
+  const normalizedMeetingCode = normalizeMeetingId(meetingCode);
+  const hasValidMeetingCode = isValidMeetingId(normalizedMeetingCode);
+
+  React.useEffect(() => {
+    setMeetingCode(parsedMeetingId);
+  }, [parsedMeetingId]);
 
   const handleJoin = async (asGuest = false) => {
+    if (!hasValidMeetingCode) {
+      return toast.error("Enter a valid meeting code");
+    }
+
     setLoading(true);
     try {
       if (!user && asGuest) {
@@ -20,7 +46,7 @@ export default function JoinMeetingPage() {
         loginUser(guestRes.data.user, guestRes.data.token);
       }
 
-      navigate(`/meeting/${roomId}`);
+      navigate(`/meeting/${normalizedMeetingCode}`);
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to join meeting");
     } finally {
@@ -46,11 +72,26 @@ export default function JoinMeetingPage() {
           <h1 className="text-3xl font-bold mb-2">Join Meeting</h1>
           <div className="flex items-center justify-center gap-2 text-dark-400 mt-2">
             <Users className="w-4 h-4" />
-            <span className="font-mono text-lg tracking-widest">{roomId}</span>
+            <span className="font-mono text-lg tracking-widest">
+              {normalizedMeetingCode || "ENTER CODE"}
+            </span>
           </div>
         </div>
 
         <div className="glass rounded-2xl p-8 space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-dark-300 mb-2">
+              Meeting Code
+            </label>
+            <input
+              type="text"
+              value={meetingCode}
+              onChange={(e) => setMeetingCode(normalizeMeetingId(e.target.value))}
+              className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl focus:outline-none focus:border-primary-500 transition-colors uppercase font-mono text-center"
+              placeholder="AB12CD34"
+              maxLength={20}
+            />
+          </div>
           {user ? (
             <>
               <div className="flex items-center gap-3 p-4 rounded-xl bg-dark-800/50">

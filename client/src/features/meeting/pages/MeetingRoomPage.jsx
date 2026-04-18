@@ -17,6 +17,7 @@ import { useLiveKitRoom } from "@features/meeting/hooks/useLiveKitRoom";
 import { useSpeechTranscription } from "@features/meeting/hooks/useSpeechTranscription";
 import toast from "react-hot-toast";
 import { useRoomSocketPresence } from "@features/meeting/hooks/useRoomSocketPresence";
+import { MeetingShareActions } from "@features/meeting/share";
 import ChatPanel from "@features/chat/components/ChatPanel";
 import HandRaisePanel from "@features/handraise/components/HandRaisePanel";
 import SummaryPanel from "@features/summary/components/SummaryPanel";
@@ -28,7 +29,6 @@ import {
   Brain,
   Pencil,
   X,
-  Copy,
   LogOut,
   User,
   Clock,
@@ -171,11 +171,6 @@ export default function MeetingRoomPage() {
     } catch (err) {
       toast.error("Failed to generate summary");
     }
-  };
-
-  const copyMeetingLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/join/${roomId}`);
-    toast.success("Meeting link copied!");
   };
 
   const handleApproveEntry = (p) => {
@@ -323,13 +318,7 @@ export default function MeetingRoomPage() {
           <span className="px-2 py-0.5 rounded-full bg-dark-800 text-xs font-mono text-dark-400">
             {roomId}
           </span>
-          <button
-            onClick={copyMeetingLink}
-            className="p-1.5 rounded-lg hover:bg-dark-700 transition-colors"
-            title="Copy link"
-          >
-            <Copy className="w-4 h-4 text-dark-400" />
-          </button>
+          <MeetingShareActions meetingId={roomId} compact />
         </div>
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1.5 text-sm text-dark-400 mr-2">
