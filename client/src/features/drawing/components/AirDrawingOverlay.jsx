@@ -104,7 +104,9 @@ export default function AirDrawingOverlay({
     <div className="absolute inset-0 z-50 bg-dark-950/85 flex flex-col animate-fade-in">
       <div className="flex items-center justify-between px-4 py-2 glass shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold gradient-text">Air Drawing</span>
+          <span className="text-sm font-semibold gradient-text">
+            Air Drawing
+          </span>
           <div
             className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${status !== "Idle" ? "bg-green-500/20 text-green-400" : "bg-dark-800 text-dark-500"}`}
           >
@@ -163,12 +165,15 @@ export default function AirDrawingOverlay({
       </div>
 
       <div className="px-4 py-2 text-center text-xs text-dark-500 shrink-0">
-        Primary hand: point to draw, pinch to erase, fist to clear. Secondary hand: two-finger move, pinch scale, open palm rotate.
+        Primary hand: point to draw, pinch to erase, fist to clear. Secondary
+        hand: two-finger move, pinch scale, open palm rotate.
       </div>
 
       <ControlPanel
         settings={settings}
-        onSettingsChange={(next) => setSettings((prev) => ({ ...prev, ...next }))}
+        onSettingsChange={(next) =>
+          setSettings((prev) => ({ ...prev, ...next }))
+        }
         onClear={handleClear}
         onUndo={() => drawingCanvasRef.current?.undo()}
         onRedo={() => drawingCanvasRef.current?.redo()}
@@ -210,7 +215,8 @@ export default function AirDrawingOverlay({
           if (gesture === "ERASE") {
             size = "60px";
             color = "transparent";
-            shadow = "0 0 15px 4px rgba(255, 0, 0, 0.8), inset 0 0 10px 2px rgba(255, 0, 0, 0.5)";
+            shadow =
+              "0 0 15px 4px rgba(255, 0, 0, 0.8), inset 0 0 10px 2px rgba(255, 0, 0, 0.5)";
             opacity = 1;
           } else {
             size = "16px";
@@ -229,7 +235,10 @@ export default function AirDrawingOverlay({
               width: size,
               height: size,
               backgroundColor: color,
-              border: gesture === "ERASE" ? "2px solid rgba(255, 50, 50, 0.8)" : "none",
+              border:
+                gesture === "ERASE"
+                  ? "2px solid rgba(255, 50, 50, 0.8)"
+                  : "none",
               borderRadius: "50%",
               transform: "translate(-50%, -50%)",
               boxShadow: shadow,
@@ -259,10 +268,14 @@ export default function AirDrawingOverlay({
           if (parsedGesture?.secondary?.gesture === CONTROL_GESTURES.MOVE) {
             shadow = "0 0 20px 4px rgba(100, 180, 255, 0.8)";
             border = "2px solid rgba(100, 180, 255, 0.8)";
-          } else if (parsedGesture?.secondary?.gesture === CONTROL_GESTURES.SCALE) {
+          } else if (
+            parsedGesture?.secondary?.gesture === CONTROL_GESTURES.SCALE
+          ) {
             shadow = "0 0 20px 4px rgba(0, 255, 200, 0.8)";
             border = "2px solid rgba(0, 255, 200, 0.8)";
-          } else if (parsedGesture?.secondary?.gesture === CONTROL_GESTURES.ROTATE) {
+          } else if (
+            parsedGesture?.secondary?.gesture === CONTROL_GESTURES.ROTATE
+          ) {
             shadow = "0 0 20px 4px rgba(255, 165, 0, 0.8)";
             border = "2px solid rgba(255, 165, 0, 0.8)";
           }
@@ -291,11 +304,14 @@ export default function AirDrawingOverlay({
         );
       })}
 
-      {!parsedGesture?.primary?.landmark && !parsedGesture?.secondary?.landmark && (
-        <div className="overlay-message">
-          {isReady ? "No hands detected. Keep your hand within the camera frame." : "Raise your hand to start drawing"}
-        </div>
-      )}
+      {!parsedGesture?.primary?.landmark &&
+        !parsedGesture?.secondary?.landmark && (
+          <div className="overlay-message">
+            {isReady
+              ? "No hands detected. Keep your hand within the camera frame."
+              : "Raise your hand to start drawing"}
+          </div>
+        )}
     </div>
   );
 }

@@ -24,10 +24,19 @@ export default function CameraView({ onResults, onReady, onError }) {
         const handsLib = await import("@mediapipe/hands");
         const cameraLib = await import("@mediapipe/camera_utils");
 
+        const HandsCtor =
+          handsLib?.Hands || handsLib?.default?.Hands || handsLib?.default;
+        const CameraCtor =
+          cameraLib?.Camera || cameraLib?.default?.Camera || cameraLib?.default;
+
+        if (!HandsCtor || !CameraCtor) {
+          throw new TypeError("MediaPipe modules failed to load.");
+        }
+
         const video = videoRef.current;
         if (!video) return;
 
-        hands = new handsLib.Hands({
+        hands = new HandsCtor({
           locateFile: (file) =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
         });
@@ -43,7 +52,7 @@ export default function CameraView({ onResults, onReady, onError }) {
           if (!stopped) onResults?.(results);
         });
 
-        camera = new cameraLib.Camera(video, {
+        camera = new CameraCtor(video, {
           onFrame: async () => {
             await hands.send({ image: video });
           },
@@ -63,6 +72,9 @@ export default function CameraView({ onResults, onReady, onError }) {
         console.error("CameraView init error:", error);
         const name = error?.name || "";
         let message = "Unable to start camera.";
+        if (error instanceof TypeError && /MediaPipe/i.test(error.message)) {
+          message = "MediaPipe failed to initialize. Try a hard refresh.";
+        }
         if (name === "NotAllowedError") {
           message = "Camera permission denied. Allow access and retry.";
         } else if (name === "NotFoundError") {
