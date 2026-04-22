@@ -6,6 +6,15 @@ export class DrawingEngine {
         this.ctx = canvas.getContext("2d");
     }
 
+    isIdentityTransform(transform) {
+        if (!transform) return true;
+        const tx = transform.tx || 0;
+        const ty = transform.ty || 0;
+        const scale = transform.scale || 1;
+        const rotation = transform.rotation || 0;
+        return Math.abs(tx) < 0.001 && Math.abs(ty) < 0.001 && Math.abs(scale - 1) < 0.001 && Math.abs(rotation) < 0.001;
+    }
+
     resize(width, height) {
         this.canvas.width = width;
         this.canvas.height = height;
@@ -25,7 +34,9 @@ export class DrawingEngine {
         all.forEach((stroke) => {
             if (!stroke.points?.length) return;
 
-            const points = stroke.transform ? TransformEngine.transformedPoints(stroke) : stroke.points;
+            const points = this.isIdentityTransform(stroke.transform)
+                ? stroke.points
+                : TransformEngine.transformedPoints(stroke);
             if (!points.length) return;
 
             const isSelected = selectedStrokeId && stroke.id === selectedStrokeId;

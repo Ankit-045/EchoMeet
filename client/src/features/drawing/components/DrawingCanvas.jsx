@@ -29,6 +29,11 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
   const appendBufferRef = useRef([]);
   const appendEmitAtRef = useRef(0);
   const transformEmitAtRef = useRef(0);
+  const eraseAtRef = useRef(0);
+
+  const MIN_POINT_DISTANCE = 2.5;
+  const MAX_BUFFER_POINTS = 120;
+  const ERASE_THROTTLE_MS = 60;
 
   useImperativeHandle(ref, () => ({
     drawCameraFrame(resultsImage) {
@@ -197,27 +202,37 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
           x: prev.x * 0.2 + point.x * 0.8,
           y: prev.y * 0.2 + point.y * 0.8,
         };
-
-        strokeManagerRef.current.appendPoints(currentStrokeIdRef.current, [
-          smooth,
-        ]);
-        appendBufferRef.current.push(smooth);
-        lastPointRef.current = smooth;
-        flushAppendBuffer(false);
+        const dist = Math.hypot(smooth.x - prev.x, smooth.y - prev.y);
+        if (dist >= MIN_POINT_DISTANCE) {
+          strokeManagerRef.current.appendPoints(currentStrokeIdRef.current, [
+            smooth,
+          ]);
+          appendBufferRef.current.push(smooth);
+          if (appendBufferRef.current.length >= MAX_BUFFER_POINTS) {
+            flushAppendBuffer(true);
+          } else {
+            flushAppendBuffer(false);
+          }
+          lastPointRef.current = smooth;
+        }
       }
 
       onStatus?.("Drawing");
     } else if (primary.gesture === GESTURES.ERASE && primary.landmark) {
       endStroke();
       const point = toScreenPoint(primary.landmark, width, height);
-      const hitIds = strokeManagerRef.current.findIntersectingStrokeIds(
-        point.x,
-        point.y,
-        28,
-      );
-      if (hitIds.length) {
-        strokeManagerRef.current.removeMany(hitIds);
-        syncService?.eraseStrokes(hitIds);
+      const now = Date.now();
+      if (now - eraseAtRef.current >= ERASE_THROTTLE_MS) {
+        eraseAtRef.current = now;
+        const hitIds = strokeManagerRef.current.findIntersectingStrokeIds(
+          point.x,
+          point.y,
+          28,
+        );
+        if (hitIds.length) {
+          strokeManagerRef.current.removeMany(hitIds);
+          syncService?.eraseStrokes(hitIds);
+        }
       }
       onStatus?.("Erasing");
     } else if (primary.gesture === GESTURES.CLEAR) {

@@ -4,7 +4,7 @@ import { Clock, UserCheck, UserX, RefreshCw, Download } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   downloadCsv,
-  generateAttendanceCsv
+  generateAttendanceCsv,
 } from "@/features/attendance/utils/attendanceCsv";
 
 export default function AttendancePanel({ roomId }) {
@@ -36,7 +36,7 @@ export default function AttendancePanel({ roomId }) {
     const csv = generateAttendanceCsv({
       attendance,
       stats,
-      meetingId: roomId
+      meetingId: roomId,
     });
     const safeId = roomId || "meeting";
     const filename = `attendance-${safeId}-${Date.now()}.csv`;

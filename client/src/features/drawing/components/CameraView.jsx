@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export default function CameraView({ onResults, onReady }) {
+export default function CameraView({ onResults, onReady, onError }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -9,7 +9,18 @@ export default function CameraView({ onResults, onReady }) {
     let stopped = false;
 
     const start = async () => {
+      let timeoutId = null;
       try {
+        timeoutId = setTimeout(() => {
+          if (!stopped) {
+            stopped = true;
+            camera?.stop?.();
+            hands?.close?.();
+            onError?.("Camera startup timed out. Check permissions or reload.");
+            onReady?.(false);
+          }
+        }, 10000);
+
         const handsLib = await import("@mediapipe/hands");
         const cameraLib = await import("@mediapipe/camera_utils");
 
@@ -42,10 +53,27 @@ export default function CameraView({ onResults, onReady }) {
         });
 
         await camera.start();
-        onReady?.(true);
+        if (video && video.paused) {
+          video.play().catch(() => undefined);
+        }
+        if (!stopped) {
+          onReady?.(true);
+        }
       } catch (error) {
         console.error("CameraView init error:", error);
+        const name = error?.name || "";
+        let message = "Unable to start camera.";
+        if (name === "NotAllowedError") {
+          message = "Camera permission denied. Allow access and retry.";
+        } else if (name === "NotFoundError") {
+          message = "No camera device found.";
+        } else if (name === "NotReadableError") {
+          message = "Camera is in use by another app.";
+        }
+        onError?.(message);
         onReady?.(false);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     };
 
@@ -58,5 +86,15 @@ export default function CameraView({ onResults, onReady }) {
     };
   }, [onReady, onResults]);
 
-  return <video ref={videoRef} className="hidden" playsInline />;
+  return (
+    <video
+      ref={videoRef}
+      className="absolute opacity-0 pointer-events-none"
+      playsInline
+      muted
+      autoPlay
+      width={640}
+      height={360}
+    />
+  );
 }

@@ -18,6 +18,7 @@ export default function AirDrawingOverlay({
   onClose,
 }) {
   const drawingCanvasRef = useRef(null);
+  const lastGestureAtRef = useRef(0);
 
   const [settings, setSettings] = useState({
     color: "#00ffff",
@@ -25,6 +26,8 @@ export default function AirDrawingOverlay({
     glowIntensity: 20,
   });
   const [isReady, setIsReady] = useState(false);
+  const [readyError, setReadyError] = useState("");
+  const [cameraKey, setCameraKey] = useState(0);
   const [status, setStatus] = useState("Idle");
   const [parsedGesture, setParsedGesture] = useState(null);
   const [cameraVisible, setCameraVisible] = useState(true);
@@ -57,10 +60,27 @@ export default function AirDrawingOverlay({
         setStatus("Idle");
         return;
       }
+      const now = performance.now();
+      if (now - lastGestureAtRef.current < 33) return;
+      lastGestureAtRef.current = now;
       setParsedGesture(interpreter.interpret(results));
     },
     [gesturesEnabled, interpreter],
   );
+
+  const handleReady = React.useCallback((ready) => {
+    if (ready) {
+      setIsReady(true);
+      setReadyError("");
+      return;
+    }
+    setIsReady(false);
+  }, []);
+
+  const handleCameraError = React.useCallback((message) => {
+    setIsReady(false);
+    setReadyError(message || "Unable to start camera.");
+  }, []);
 
   const handleClear = () => {
     drawingCanvasRef.current?.clearAll();
@@ -104,7 +124,12 @@ export default function AirDrawingOverlay({
       </div>
 
       <div className="relative flex-1 overflow-hidden">
-        <CameraView onResults={handleResults} onReady={setIsReady} />
+        <CameraView
+          key={`camera-${cameraKey}`}
+          onResults={handleResults}
+          onReady={handleReady}
+          onError={handleCameraError}
+        />
         <DrawingCanvas
           ref={drawingCanvasRef}
           parsedGesture={parsedGesture}
@@ -118,7 +143,20 @@ export default function AirDrawingOverlay({
           <div className="absolute inset-0 flex items-center justify-center bg-dark-950/80">
             <div className="text-center">
               <div className="w-12 h-12 border-4 border-primary-500/30 border-t-primary-500 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-dark-300">Loading AirDrawer engine...</p>
+              <p className="text-dark-300">
+                {readyError || "Loading AirDrawer engine..."}
+              </p>
+              {readyError && (
+                <button
+                  className="mt-3 px-3 py-1.5 text-xs rounded-md bg-primary-500/20 text-primary-300 hover:bg-primary-500/30 transition"
+                  onClick={() => {
+                    setReadyError("");
+                    setCameraKey((value) => value + 1);
+                  }}
+                >
+                  Retry camera
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -254,7 +292,9 @@ export default function AirDrawingOverlay({
       })}
 
       {!parsedGesture?.primary?.landmark && !parsedGesture?.secondary?.landmark && (
-        <div className="overlay-message">Raise your hand to start drawing</div>
+        <div className="overlay-message">
+          {isReady ? "No hands detected. Keep your hand within the camera frame." : "Raise your hand to start drawing"}
+        </div>
       )}
     </div>
   );
