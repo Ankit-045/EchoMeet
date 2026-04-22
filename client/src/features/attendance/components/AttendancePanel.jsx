@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { getAttendance } from "@/services/api";
-import { Clock, UserCheck, UserX, RefreshCw } from "lucide-react";
+import { Clock, UserCheck, UserX, RefreshCw, Download } from "lucide-react";
+import toast from "react-hot-toast";
+import {
+  downloadCsv,
+  generateAttendanceCsv
+} from "@/features/attendance/utils/attendanceCsv";
 
 export default function AttendancePanel({ roomId }) {
   const [attendance, setAttendance] = useState([]);
@@ -22,6 +27,22 @@ export default function AttendancePanel({ roomId }) {
   useEffect(() => {
     fetchAttendance();
   }, [roomId]);
+
+  const handleDownloadCsv = () => {
+    if (!attendance.length) {
+      toast.error("No attendance data to export");
+      return;
+    }
+    const csv = generateAttendanceCsv({
+      attendance,
+      stats,
+      meetingId: roomId
+    });
+    const safeId = roomId || "meeting";
+    const filename = `attendance-${safeId}-${Date.now()}.csv`;
+    downloadCsv(csv, filename);
+    toast.success("Attendance CSV downloaded");
+  };
 
   const formatDuration = (seconds) => {
     if (!seconds) return "—";
@@ -82,14 +103,24 @@ export default function AttendancePanel({ roomId }) {
         <h4 className="text-sm font-medium text-dark-400">
           Participants ({attendance.length})
         </h4>
-        <button
-          onClick={fetchAttendance}
-          className="p-1.5 rounded-lg hover:bg-dark-700 transition-colors"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 text-dark-400 ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleDownloadCsv}
+            className="p-1.5 rounded-lg hover:bg-dark-700 transition-colors"
+            title="Download CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-dark-400" />
+          </button>
+          <button
+            onClick={fetchAttendance}
+            className="p-1.5 rounded-lg hover:bg-dark-700 transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 text-dark-400 ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* List */}
