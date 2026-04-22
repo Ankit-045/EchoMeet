@@ -1,5 +1,44 @@
 import { useEffect, useRef } from "react";
 
+const HANDS_CDN_VERSION = "0.4.1675469240";
+const CAMERA_CDN_VERSION = "0.3.1675466862";
+
+let mediaPipeCdnPromise = null;
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-mp-src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.defer = true;
+    script.dataset.mpSrc = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+function loadMediaPipeFromCdn() {
+  if (mediaPipeCdnPromise) return mediaPipeCdnPromise;
+  mediaPipeCdnPromise = (async () => {
+    await loadScriptOnce(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${HANDS_CDN_VERSION}/hands.js`,
+    );
+    await loadScriptOnce(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@${CAMERA_CDN_VERSION}/camera_utils.js`,
+    );
+    return {
+      Hands: window.Hands,
+      Camera: window.Camera,
+    };
+  })();
+  return mediaPipeCdnPromise;
+}
+
 export default function CameraView({ onResults, onReady, onError }) {
   const videoRef = useRef(null);
 
@@ -24,12 +63,18 @@ export default function CameraView({ onResults, onReady, onError }) {
         const handsLib = await import("@mediapipe/hands");
         const cameraLib = await import("@mediapipe/camera_utils");
 
-        const HandsCtor =
+        let HandsCtor =
           handsLib?.Hands || handsLib?.default?.Hands || handsLib?.default;
-        const CameraCtor =
+        let CameraCtor =
           cameraLib?.Camera || cameraLib?.default?.Camera || cameraLib?.default;
 
-        if (!HandsCtor || !CameraCtor) {
+        if (typeof HandsCtor !== "function" || typeof CameraCtor !== "function") {
+          const cdnLib = await loadMediaPipeFromCdn();
+          HandsCtor = cdnLib?.Hands;
+          CameraCtor = cdnLib?.Camera;
+        }
+
+        if (typeof HandsCtor !== "function" || typeof CameraCtor !== "function") {
           throw new TypeError("MediaPipe modules failed to load.");
         }
 
@@ -38,7 +83,7 @@ export default function CameraView({ onResults, onReady, onError }) {
 
         hands = new HandsCtor({
           locateFile: (file) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+            `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${HANDS_CDN_VERSION}/${file}`,
         });
 
         hands.setOptions({
@@ -96,7 +141,7 @@ export default function CameraView({ onResults, onReady, onError }) {
       camera?.stop?.();
       hands?.close?.();
     };
-  }, [onReady, onResults]);
+  }, [onError, onReady, onResults]);
 
   return (
     <video
