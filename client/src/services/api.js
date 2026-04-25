@@ -59,4 +59,8 @@ export const generateSummary = (data) => api.post('/summary/generate', data);
 export const getSummaries = (roomId) => api.get(`/summary/${roomId}`);
 export const getMySummaries = () => api.get('/summary/my/all');
 
+// Feedback
+export const submitFeedback = (data) => api.post('/feedback', data);
+export const getRecentFeedback = () => api.get('/feedback/recent');
+
 export default api;

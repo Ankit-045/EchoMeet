@@ -162,6 +162,22 @@ input[type="range"]::-webkit-slider-thumb:hover {
   animation: wave 0.5s ease-in-out infinite;
 }
 
+/* Continuous Marquee Animation */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee var(--duration, 30s) linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
 /* Screenshot prevention (best-effort) */
 .protected-content {
   -webkit-user-select: none;

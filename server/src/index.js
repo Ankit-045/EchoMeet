@@ -12,6 +12,7 @@ const meetingRoutes = require('./routes/meeting');
 const chatRoutes = require('./routes/chat');
 const attendanceRoutes = require('./routes/attendance');
 const summaryRoutes = require('./routes/summary');
+const feedbackRoutes = require('./routes/feedback');
 const { authLimiter, apiLimiter, summaryLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
@@ -73,6 +74,7 @@ app.use('/api/meetings', apiLimiter, meetingRoutes);
 app.use('/api/chat', apiLimiter, chatRoutes);
 app.use('/api/attendance', apiLimiter, attendanceRoutes);
 app.use('/api/summary', summaryLimiter, summaryRoutes);
+app.use('/api/feedback', apiLimiter, feedbackRoutes);
 
 // Health check
 

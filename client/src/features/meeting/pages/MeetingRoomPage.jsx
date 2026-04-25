@@ -22,6 +22,7 @@ import ChatPanel from "@features/chat/components/ChatPanel";
 import HandRaisePanel from "@features/handraise/components/HandRaisePanel";
 import SummaryPanel from "@features/summary/components/SummaryPanel";
 import AirDrawingOverlay from "@features/drawing/components/AirDrawingOverlay";
+import FeedbackModal from "@features/meeting/components/FeedbackModal";
 import {
   MessageSquare,
   Hand,
@@ -101,6 +102,7 @@ export default function MeetingRoomPage() {
   const [attendanceStarted, setAttendanceStarted] = useState(
     Boolean(room?.attendanceStartedAt),
   );
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const { roomInstance } = useLiveKitRoom();
 
@@ -126,6 +128,7 @@ export default function MeetingRoomPage() {
     setIsWaiting,
     setIsDenied,
     navigate,
+    onMeetingEnd: () => setShowFeedback(true),
   });
 
   const handleEndMeeting = async () => {
@@ -133,7 +136,7 @@ export default function MeetingRoomPage() {
     try {
       await endRoomApi(roomId);
       toast.success("Meeting ended");
-      navigate("/dashboard");
+      setShowFeedback(true);
     } catch (err) {
       toast.error("Failed to end meeting");
     }
@@ -392,7 +395,7 @@ export default function MeetingRoomPage() {
             Generate Summary
           </button>
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => setShowFeedback(true)}
             className="p-2 rounded-lg hover:bg-dark-800 transition-colors text-dark-400"
             title="Leave"
           >
@@ -485,6 +488,12 @@ export default function MeetingRoomPage() {
           </div>
         )}
       </div>
+
+      <FeedbackModal 
+        meetingId={roomId}
+        isOpen={showFeedback}
+        onClose={() => navigate("/dashboard")}
+      />
     </div>
   );
 }

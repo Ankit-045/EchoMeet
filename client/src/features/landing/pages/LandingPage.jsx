@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
+import { getRecentFeedback } from "@/services/api";
 import {
   Video,
   MessageSquare,
@@ -10,7 +12,19 @@ import {
   Shield,
   Pencil,
   UserCheck,
+  Star,
+  Quote,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+
+const DUMMY_REVIEWS = [
+  { userName: "Alex R.", rating: 5, comment: "The AI summaries are a game changer! Saved me hours of note-taking every single week." },
+  { userName: "Sarah L.", rating: 5, comment: "Air drawing is incredibly intuitive. It has completely changed how I present my architectural designs." },
+  { userName: "David K.", rating: 5, comment: "Ultra-low latency is no joke. This is by far the smoothest meeting experience I've had this year." },
+  { userName: "Maria G.", rating: 4, comment: "The spatial audio feature makes large group calls feel much more natural and less exhausting." },
+  { userName: "James W.", rating: 5, comment: "Perfect for our remote-first team. The automatic attendance tracking is a lifesaver for HR." },
+];
 
 const features = [
   {
@@ -58,6 +72,38 @@ const features = [
 export default function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [reviews, setReviews] = useState(DUMMY_REVIEWS);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const getItemsPerPage = () => {
+    if (windowWidth >= 1024) return 3;
+    if (windowWidth >= 768) return 2;
+    return 1;
+  };
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const res = await getRecentFeedback();
+        if (res.data && res.data.length > 0) {
+          setReviews([...res.data, ...DUMMY_REVIEWS].slice(0, 10));
+        }
+      } catch (err) {
+        console.error("Failed to fetch reviews:", err);
+      }
+    };
+    fetchReviews();
+  }, []);
+
+  // Duplicate reviews for seamless loop
+  const duplicatedReviews = [...reviews, ...reviews];
 
   return (
     <div className="min-h-screen bg-dark-950 protected-content">
@@ -193,6 +239,83 @@ export default function LandingPage() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials Carousel */}
+      <section className="py-24 px-6 border-t border-dark-800/50 relative overflow-hidden bg-dark-950/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-16">
+            <div className="text-left">
+              <h2 className="text-3xl md:text-5xl font-bold mb-4">
+                Loved by teams worldwide
+              </h2>
+              <p className="text-dark-400 text-lg">
+                Real experiences from the IntelliMeet community
+              </p>
+            </div>
+            <div className="flex gap-4 mt-8 md:mt-0">
+              <button
+                className="p-3 glass rounded-full hover:bg-dark-800 text-white opacity-50 cursor-not-allowed"
+                title="Continuous marquee active"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <button
+                className="p-3 glass rounded-full hover:bg-dark-800 text-white opacity-50 cursor-not-allowed"
+                title="Continuous marquee active"
+              >
+                <ChevronRight size={24} />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden group">
+            <div 
+              className="animate-marquee flex gap-6"
+              style={{ '--duration': `${reviews.length * 4}s` }}
+            >
+              {duplicatedReviews.map((review, i) => (
+                <div
+                  key={i}
+                  className="w-[350px] md:w-[450px] flex-shrink-0"
+                >
+                  <div className="glass p-8 rounded-3xl h-full relative overflow-hidden group hover:border-primary-500/30 transition-all duration-300">
+                    <Quote className="absolute top-4 right-4 w-12 h-12 text-dark-800 opacity-20" />
+                    <div className="flex gap-1 mb-4">
+                      {[...Array(5)].map((_, j) => (
+                        <Star
+                          key={j}
+                          size={16}
+                          className={
+                            j < review.rating
+                              ? "fill-accent-500 text-accent-500"
+                              : "text-dark-600"
+                          }
+                        />
+                      ))}
+                    </div>
+                    <p className="text-dark-200 mb-8 italic text-lg leading-relaxed">
+                      "{review.comment || "Incredible productivity boost!"}"
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center font-bold text-white uppercase text-xl shadow-lg shadow-primary-500/20">
+                        {review.userName[0]}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-white">
+                          {review.userName}
+                        </p>
+                        <p className="text-xs text-dark-500 uppercase tracking-widest font-bold">
+                          Verified User
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

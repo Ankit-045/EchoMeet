@@ -13,6 +13,7 @@ export function useRoomSocketPresence({
     setIsWaiting,
     setIsDenied,
     navigate,
+    onMeetingEnd,
 }) {
     useEffect(() => {
         if (!socket || !participantId) return;
@@ -59,7 +60,11 @@ export function useRoomSocketPresence({
         socket.on('meeting:ended', () => {
             console.log('🏁 Meeting ended by host');
             toast('Meeting ended by host', { icon: '👋' });
-            navigate('/dashboard');
+            if (onMeetingEnd) {
+                onMeetingEnd();
+            } else {
+                navigate('/dashboard');
+            }
         });
 
         // Handle entry approval/denial for knocking users
