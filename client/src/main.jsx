@@ -4,6 +4,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import App from "./app/App";
 import "./index.css";
 import "@livekit/components-styles";
+import * as serviceWorker from "./registerSW";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const app = (
@@ -19,3 +20,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     app
   ),
 );
+
+// Register service worker for PWA
+serviceWorker.register();

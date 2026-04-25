@@ -8,10 +8,12 @@ import {
 import { Toaster } from "react-hot-toast";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { SocketProvider } from "@/context/SocketContext";
+import { PWAProvider, usePWA } from "@/context/PWAContext";
 import { LandingPage } from "@features/landing";
 import { LoginPage, RegisterPage } from "@features/auth";
 import { DashboardPage } from "@features/dashboard";
 import { MeetingRoomPage, JoinMeetingPage } from "@features/meeting";
+import { Video } from "lucide-react";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -22,6 +24,26 @@ function ProtectedRoute({ children }) {
       </div>
     );
   return user ? children : <Navigate to="/login" />;
+}
+
+function PWAInstallTrigger() {
+  const { isInstallable, installPWA } = usePWA();
+
+  if (!isInstallable) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[100] animate-slide-up">
+      <button
+        onClick={installPWA}
+        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-600 to-accent-600 text-white rounded-full font-bold shadow-2xl hover:scale-105 transition-transform hover:shadow-primary-500/30"
+      >
+        <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+          <Video size={18} />
+        </div>
+        Install App
+      </button>
+    </div>
+  );
 }
 
 function App() {
@@ -45,23 +67,26 @@ function App() {
               },
             }}
           />
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/meeting/:roomId" element={<MeetingRoomPage />} />
-            <Route path="/join" element={<JoinMeetingPage />} />
-            <Route path="/join/:meetingId" element={<JoinMeetingPage />} />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
+          <PWAProvider>
+            <PWAInstallTrigger />
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/meeting/:roomId" element={<MeetingRoomPage />} />
+              <Route path="/join" element={<JoinMeetingPage />} />
+              <Route path="/join/:meetingId" element={<JoinMeetingPage />} />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </PWAProvider>
         </SocketProvider>
       </AuthProvider>
     </Router>
